@@ -1,0 +1,831 @@
+---
+title: "Case Study: GLM Predicting "
+author: "Lara Monteserín Placer"
+date: 'UC3M, 2023/24'
+output:
+  html_document: 
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_depth: 1
+  pdf_document:
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 1
+editor_options:
+  chunk_output_type: console
+---
+
+```{r global_options, include=T, echo = F}
+knitr::opts_chunk$set(echo = T, warning=FALSE, message=FALSE)
+```
+
+# HMW PART 2
+
+## 1. Introduction
+
+In the realm of Formula 1, the pursuit of championship glory stands as the epitome of a driver's career. This exploration takes inspiration from the intense world of motorsport, aiming to predict the coveted title of "Champion" for Formula 1 drivers. By scrutinizing a dataset encompassing drivers' profiles, race performances, and career achievements, we endeavor to construct a Generalized Linear Model (GLM). Through variables such as race wins, podium finishes, and other key metrics, this analysis seeks to unravel the intricate dynamics that distinguish champions on the racing circuit. Our goal is to gain valuable insights into the factors that propel drivers to the zenith of success in the thrilling and competitive landscape of Formula 1.
+
+![](formula1.jpg){width="395"}
+
+In this case study, we will use a data set with 868 instances of F1 drivers that have been in the competition since 1950 to 2022.
+
+### 1.1 The dataset: Description of features
+
+The dataset F1DriversDataset.csv includes the following 22 variables:
+
+1.  **Driver:** Represents the name of the Formula 1 driver.
+
+2.  **Nationality:** Signifies the country of origin or nationality of the driver.
+
+3.  **Seasons:** Indicates the years corresponding to the Formula 1 seasons the driver has participated in.
+
+4.  **Championships:** Reflects the total number of championships won by the driver.
+
+5.  **Race_Entries:** Represents the overall count of Formula 1 races entered by the driver. Drivers are considered to be entered into a race if they attempt to compete in at least one official practice session with the intent of participating in the race.
+
+6.  **Race_Starts:** Denotes the total number of races in which the driver participated. A driver is considered to have started a race if they line up on the grid or at the pit lane exit for the start of the race.
+
+7.  **Pole_Positions:** Quantifies the number of times the driver secured the pole position in races.
+
+8.  **Race_Wins:** Signifies the total number of races won by the driver.
+
+9.  **Podiums:** Indicates the total number of podium finishes achieved by the driver.
+
+10. **Fastest_Laps:** Represents the count of times the driver set the fastest lap in a race.
+
+11. **Points:** Reflects the cumulative points earned by the driver in Formula 1 races.
+
+12. **Active:** A binary indicator (likely 0 or 1) denoting whether the driver is currently active.
+
+13. **Championship.Years:** Represents the specific years in which the driver won championships.
+
+14. **Decade:** Indicates the decade during which the driver's career spans.
+
+15. **Pole_Rate:** Signifies the rate or percentage of races where the driver secures pole position.
+
+16. **Start_Rate:** Denotes the rate or percentage of races in which the driver starts.
+
+17. **Win_Rate:** Represents the rate or percentage of races won by the driver.
+
+18. **Podium_Rate:** Indicates the rate or percentage of races in which the driver achieves podium finishes.
+
+19. **FastLap_Rate:** Signifies the rate or percentage of races where the driver sets the fastest lap.
+
+20. **Points_Per_Entry:** Represents the average number of points earned per race entry by the driver.
+
+21. **Years_Active:** Indicates the total number of years the driver has been active in Formula 1.
+
+22. **Champion:** A binary indicator (likely 0 or 1) denoting whether the driver is a champion or not (has won a championship throughout his career).
+
+### 1.2 The goal
+
+Predict the response, the feature Champion, that represents whether a driver is a champion or not, as a function of the other variables using Generalized Linear Regression. The principal question of interest is whether and how the probability of being champion is influenced by the driver's amount of years active, team, nationality, and other characteristics.
+
+```{r}
+library(tidyverse)
+library(MASS)
+library(e1071)
+library(caret) #for ML 200 tools
+library(lubridate)
+library(tidytext)
+
+#setwd("C:/Users/laram/Desktop/Todo/UC3M/Second Bimester/Models/Assignment")
+
+# Loading and preparing data
+Formula1 <- read.csv("F1DriversDataset.csv")
+
+# Display column names in the dataset
+colnames(Formula1)
+```
+
+## 2. Data Preparation
+
+### 2.1 Feature extraction
+
+1.  **Relative Racing Success:**
+
+    A new column that represents the driver's relative success in terms of wins, podiums, pole positions and fastest laps.
+
+```{r}
+Formula1$success <- Formula1$Race_Wins + 0.5 * Formula1$Podiums + 0.3 * Formula1$Pole_Positions + 0.1 * Formula1$Fastest_Laps
+
+```
+
+2.  **Recent Success:**
+
+    We assign a decreasing weight to earlier years, so that wins in more recent years have a greater impact. We do this by exponential weighting, where more recent years have a higher weight.
+
+    Many fields are empty, and the others are lists of one or several years. To apply the recent success calculation, Championship.Years values that are empty are assigned a 0. For those fields that include a multi-year list, the most recent year is taken into consideration.
+
+```{r}
+library(dplyr)
+
+Formula1 <- Formula1 %>%
+  mutate(
+    Championship.Years = if_else(Championship.Years == "", "[0]", Championship.Years),  # Assign 0 to empty
+    Championship.Years = gsub("[^0-9,]", "", Championship.Years),  # Delete any non-numeric characters
+    Championship.Years = strsplit(Championship.Years, ",")  # Convert to comma separated list
+  ) %>%
+  rowwise() %>%
+  mutate(
+    recent_success = Race_Wins / (2023 - max(as.numeric(unlist(Championship.Years))) + 1)
+  )
+```
+
+3.  **Active and Champion into Yes and No**
+
+    We transform Active and Champion columnsvalues into Yes or No for an easier interpretation
+
+```{r}
+Formula1 <- Formula1 %>%
+  mutate(
+    Active = ifelse(Active == "True", "Yes", "No"),
+    Champion = ifelse(Champion == "True", "Yes", "No")
+  )
+```
+
+4.  **Pondering points depending on the scoring system of the decade.**
+
+Older drivers have fewer points than current drivers because under the pre-2010 scoring system, fewer points were allocated to those who won or finished in the top positions. To compensate for this, we weight in such a way that drivers who are in the 2000s or earlier have their Points value multiplied by an average value of the weighting for each grid position in the current scoring system.
+
+Following this reasoning, we have to update the column Points_Per_Entry, so we recalculate it with the new points.
+
+```{r}
+previous_points <- c(10, 6, 4, 3, 2, 1)
+new_points <- c(25, 18, 15, 12, 10, 8, 6, 4, 2, 1)
+
+previous_points <- previous_points / sum(previous_points)
+new_points <- new_points / sum(new_points)
+
+ponderation <- previous_points / new_points
+
+print(ponderation)
+```
+
+```{r}
+Formula1 <- Formula1 %>%
+  mutate(
+    Points = case_when(
+      Decade %in% c(1950, 1960, 1970, 1980, 1990, 2000) ~ Points * mean(ponderation),
+      TRUE ~ Points
+    )
+  )
+
+Formula1 <- Formula1 %>%
+  mutate(
+    Points_Per_Entry = Points / Race_Entries  # Replace with the desired value
+  )
+```
+
+5.  **Diifferent nationalities**
+
+There are 47 different nationalities in the dataset. As they are too many to codify later as the categorical variable it is, we can group them in smaller groups, depending on the region. We remove these two drivers as it is not possible to change the value of their nationality for some reason.
+
+```{r}
+Formula1 <- Formula1[!(Formula1$Driver %in% c("Bertrand Gachot", "Robert Doornbos")), ]
+
+
+nationalities <- unique(Formula1$Nationality)
+
+Formula1 <- Formula1 %>%
+  mutate(
+    Nationality = case_when(
+      Nationality %in% c("Italy", "Belgium", "France", "Spain", "Portugal", "Mónaco", "Monaco", "Austria", "Liechtenstein", "Netherlands", "Monaco Netherlands", "Belgium France") ~ "Occidental Europe",
+      Nationality %in% c("Sweden", "Denmark", "Finland") ~ "Northern Europe",
+      Nationality %in% c("Hungary", "Checoslovaquia", "East Germany", "West Germany", "Germany", "United Kingdom", "Ireland", "East Germany, West Germany", "Czech Republic", "Switzerland", "Poland", "RAF") ~ "Central Europe",
+      Nationality %in% c("United States", "Canada") ~ "North American",
+      Nationality %in% c("Brazil", "Argentina", "Colombia", "Venezuela", "Uruguay", "Mexico", "Chile") ~ "South American",
+      Nationality %in% c("New Zealand", "Australia") ~ "Oceanic",
+      Nationality %in% c("Thailand", "India", "Japan", "Indonesia", "Russia", "China", "Malaysia") ~ "Asian",
+       Nationality %in% c("South Africa", "Morocco", "Rhodesia", "Rhodesia and Nyasaland") ~ "African",
+      TRUE ~ Nationality
+    )
+  )
+
+nationalities <- unique(Formula1$Nationality)
+
+```
+
+6.  **A new column based on the experience**
+
+Ir order to determine later whether a huge experience in the sport is related to win a championship, we create a column. We consider an experience to be long when it is equal or larger than 10 years.
+
+```{r}
+Formula1$many_years<- ifelse(Formula1$Years_Active >= 10, "Yes", "No")
+```
+
+### 2.2 Looking for missing values
+
+Looking for the missing or null values in each column we see that there are none.
+
+```{r}
+# Counting NAs and empty values in each column
+na_counts <- colSums(is.na(Formula1)| Formula1 == "")
+na_counts <- na_counts[order(-na_counts)]
+print(na_counts)
+
+```
+
+```         
+ Driver  Nationality    Seasons    Championships       Race_Entries   0            0             0            0                  0 Race_Starts Pole_Positions   Race_Wins    Podiums  Fastest_Laps      0               0                0          0            0          Points  Active  Championship.Years     Decade          Pole_Rate      0         0           0                  0                0 Start_Rate    Win_Rate    Podium_Rate   FastLap_Rate Points_Per_Entry     0            0             0              0              0 Years_Active           Champion            success     recent_success          0                  0                  0              0 
+```
+
+### **2.3** Data cleaning
+
+We want to ensure that we are working with a reliable and accurate dataset.
+
+```{r}
+#Data types
+glimpse(Formula1)
+
+#To avoid errors when applying mutate to Championship.Years
+Formula1 <- Formula1 %>%
+  mutate(
+    Championship.Years = paste(Championship.Years, collapse = ", ")
+  ) 
+#Data transformation to ensure that there are not any leading and trailing whitespaces from all character columns in the dataframe
+Formula1 <- Formula1 %>% 
+                            mutate_all(str_trim)
+
+#Standardizing and cleaning column names. Useful for ensuring that column names are consistent and easy to work with.
+library(janitor)
+Formula1 <- Formula1 %>% 
+                               clean_names()
+
+#Removing duplicates
+
+#Cuurent number of rows
+n_rows <- nrow(Formula1)
+print(n_rows)
+
+#Creates a logical vector duplicate_rows indicating whether each row in the netflix data frame is a duplicate of a previous row
+duplicate_rows <- Formula1 %>% duplicated.data.frame()
+
+#Retains only the unique rows based on the values in the "title" column
+Formula1 <- Formula1 %>% distinct(driver, .keep_all = TRUE)
+
+#Number of rows after removing duplicates
+n_rows2 <- nrow(Formula1)
+print(n_rows2)
+
+```
+
+There were no duplicated rows in the data, so we still have 868 rows.
+
+### 2.4 Splitting into train and test
+
+It is always a good idea to separate from the beginning the training set (what the tool is going to see) from the testing set (used only to validate predictions).
+
+```{r}
+# split between training and testing sets: Indicate what I will predict (champion) -> the target
+
+spl = createDataPartition(Formula1$champion, p = 0.8, list = FALSE) # 80% for training
+
+F1Train = Formula1[spl,]
+F1Test = Formula1[-spl,]
+
+str(F1Train)
+
+summary(F1Train)
+```
+
+## 3. Explanatory Descriptive Analysis (EDA)
+
+We plot variables in order to get information, taking into account the most important variable, that is the target.
+
+### 3.1 Target variable analysis: champion
+
+```{r}
+head(F1Train)
+
+# Summary for the target variable
+(table(F1Train$champion, F1Train$many_years))
+```
+
+Unconditionally, 4% of the drivers are champions. This percentage is low, but out of these few champions in F1 history, we see here that 57% of drivers with 10+ years of experience have been champions, so there could be a link between the two characteristics.
+
+To find it out, let's look at how this proportion changes with characteristics like the nationality, the number of victories and pole positions, etc.
+
+### 3.2 Other variables analysis respect to the target
+
+Let's analyze the target vs some predictors:
+
+#### 3.2.1 Categorical vs numerical discrete
+
+Champion by years in active, races started, pole positions, race wins, podiums, fastest laps and decade they were driving.
+
+We can see a quite clear relationship with all of them, although it is not that clear for the decade.
+
+```{r}
+discrete_variables <- c("years_active", "race_starts", "pole_positions", "race_wins", "podiums", "fastest_laps", "decade")
+
+for (variable in discrete_variables) {
+  #For it not to be interpreted as a factor
+  F1Train[[variable]] <- as.numeric(F1Train[[variable]])
+  
+  #Same to test data not to have problems later
+  F1Test[[variable]] <- as.numeric(F1Test[[variable]])
+  
+  
+  plot <- ggplot(F1Train, aes(x = champion, y = .data[[variable]])) + 
+    geom_boxplot(fill = "lightblue") +
+    labs(title = paste("Champion by", variable), x = "", y = "", col = "")
+  
+  print(plot)
+}
+
+```
+
+![](http://127.0.0.1:23563/graphics/979ea459-7f32-473c-82b2-5e3c856ab672.png){width="284"}
+
+![](http://127.0.0.1:23563/graphics/41d83fba-1ddd-464b-bacb-5623fb84c2a0.png){width="288"}
+
+![](http://127.0.0.1:23563/graphics/25eda8b0-0ac7-4657-b17e-79cec4c1c417.png){width="282"}
+
+![](http://127.0.0.1:23563/graphics/d0cdc9b1-7979-4fba-a810-a2cc31670a24.png){width="282"}
+
+![](http://127.0.0.1:23563/graphics/9aade4d5-eb13-4f95-a33c-c7be47084ccd.png){width="282"}
+
+![](http://127.0.0.1:23563/graphics/3e5103db-312f-4eb1-87b4-6c21f77d8423.png){width="285"}
+
+![](http://127.0.0.1:23563/graphics/acd723ab-0c3f-462d-8b84-edf8174ece44.png){width="285"}
+
+#### 3.2.2 Categorical vs numerical continuous
+
+We can see a quite clear relationship with start_rate, win_rate, podium_rate (although there are some outliers, all of them in the decade of 1950), success and recent_success; and not such a clear relationship with points, points_per_entry and pole_rate.
+
+```{r}
+continuous_variables <- c("points", "pole_rate", "start_rate", "win_rate", "podium_rate", "fast_lap_rate", "points_per_entry", "success", "recent_success")
+
+for (variable in continuous_variables) {
+  F1Train[[variable]] <- as.numeric(F1Train[[variable]])
+  #Same to test data not to have problems later
+  F1Test[[variable]] <- as.numeric(F1Test[[variable]])
+  
+  plot <- ggplot(F1Train, aes(x = .data[[variable]], y = champion)) + 
+    geom_point(aes(color = as.factor(champion)), alpha = 0.7) +
+    labs(title = paste("Champion by", variable), x = "", y = "", col = "")
+  
+  print(plot)
+}
+```
+
+![](http://127.0.0.1:23563/graphics/43b244ce-70b4-4a3d-a94d-e7e27d757be4.png){width="282"}
+
+![](http://127.0.0.1:23563/graphics/0d8df44d-c24e-479a-91b9-f0b089c57604.png){width="272"}
+
+![](http://127.0.0.1:23563/graphics/8f0d41a0-4ad2-49d5-ba7b-ba1e93808615.png){width="280"}
+
+![](http://127.0.0.1:23563/graphics/4c0c7a46-d661-4d92-b067-d4434f734845.png){width="278"}
+
+![](http://127.0.0.1:23563/graphics/2201cc16-ca5e-4b61-804f-75c561c8dc68.png){width="284"}
+
+![](http://127.0.0.1:23563/graphics/608e9ced-7f81-4792-b1e7-8285d5cf7695.png){width="279"}
+
+![](http://127.0.0.1:23563/graphics/3f5f3875-9f15-4b99-88a8-b1966fb8422a.png){width="285"}
+
+![](http://127.0.0.1:23563/graphics/6f14fc7c-6aea-4b3e-ba70-dcd1168060d0.png){width="281"}
+
+![](http://127.0.0.1:23563/graphics/564df203-ec7a-45ea-9084-74d56ad0cd15.png){width="310"}
+
+#### 3.2.3 Categorical vs categorical
+
+We don't use seasons as it is difficult to codify and *decade* gives us the same information.
+
+Somehow we can see a relation with *many_years*: 30% of long-career drivers are not champion, while for short-career ones is 98,5%.
+
+```         
+                  No   Yes   many_years
+ Champion     No  626  42
+              Yes  10  18
+```
+
+There is not such a clear relationship with *nationality.*
+
+```{r}
+categorical_variables <- c("nationality", "many_years")
+
+for (variable in categorical_variables) {
+  F1Train %>%
+    ggplot(aes(x = .data[[variable]], fill = champion)) + 
+    geom_bar() + 
+    labs(title = paste("Champion by", variable), x = "", y = "", col = "") +
+    coord_flip() -> plot_name
+  
+  print(plot_name)
+}
+```
+
+![](http://127.0.0.1:23563/graphics/1712587e-aed7-402a-9cff-57b4ae941f7a.png){width="275"}
+
+![](http://127.0.0.1:23563/graphics/68daa77c-b687-4f92-b366-fabb9c6c12d3.png){width="296"}
+
+### 3.3 Converting categorical variables to dummies using factor
+
+We cannot numerate categorical variables. For this reason, we need to correctly codify by creating one dummy per category (variables that can be rather 0 or 1). This happens with variables nationality, active and many_years. By transforming these variables into factors, R creates dummy variables for each category.
+
+This way, we will be able to calculate correlations between them and the target variable later. As we just want to do this for extracting correlations, we will create a new F1Train_corr in order to not modify the original, that we will use to predict.
+
+Also, we will directly delete championship_years and seasons as they are really hard to codify and they will not provide useful information.
+
+```{r}
+F1Train_corr <- F1Train[, setdiff(names(F1Train), c("seasons", "championship_years"))]
+
+#We do the same to test data
+F1Test_corr <- F1Test[, setdiff(names(F1Test), c("seasons", "championship_years"))]
+
+categorical_cols <- c("nationality", "many_years", "active")
+  
+# convert categorical variables to factors
+F1Train_corr[categorical_cols] <- lapply(F1Train[categorical_cols], factor)
+
+# Create dummy variables for each categorical variable
+for (col in categorical_cols) {
+  # Create dummy variables
+  dummy_variables <- model.matrix(~ -1 + as.factor(F1Train_corr[[col]]))
+  
+  # Assign names to dummy variables
+  col_names <- gsub(" ", "_", levels(F1Train_corr[[col]]))
+  col_names <- paste0(col, "_", col_names)
+  colnames(dummy_variables) <- col_names
+  
+  # Add the dummy variables to the original dataset
+  F1Train_corr <- cbind(F1Train_corr, dummy_variables)
+}
+
+# Remove the original variables
+F1Train_corr <- F1Train_corr[, !(names(F1Train_corr) %in% categorical_cols)]
+```
+
+We do the same to the testing set to be able to predict in the future (as the variables have to be of the same type in both parts of the dataframe)
+
+```{r}
+# convert categorical variables to factors
+F1Test_corr[categorical_cols] <- lapply(F1Test[categorical_cols], factor)
+
+# Create dummy variables for each categorical variable
+for (col in categorical_cols) {
+  # Create dummy variables
+  dummy_variables <- model.matrix(~ -1 + as.factor(F1Test_corr[[col]]))
+  
+  # Assign names to dummy variables
+  col_names <- gsub(" ", "_", levels(F1Test_corr[[col]]))
+  col_names <- paste0(col, "_", col_names)
+  colnames(dummy_variables) <- col_names
+  
+  # Add the dummy variables to the original dataset
+  F1Test_corr <- cbind(F1Test_corr, dummy_variables)
+}
+
+# Remove the original variables
+F1Test_corr <- F1Test_corr[, !(names(F1Test_corr) %in% categorical_cols)]
+```
+
+### 3.4 Study of correlations
+
+```{r}
+library(dplyr)
+
+#champion into numbers
+F1Train_corr$champion <- ifelse(F1Train_corr$champion == "Yes", "1", "0")
+F1Test_corr$champion <- ifelse(F1Test_corr$champion == "Yes", "1", "0")
+
+F1Train_corr[, 2:32] <- mutate_all(F1Train_corr[, 2:32], as.numeric)
+
+#We do the same to the testing set to be able to predict in the future (as the variables have to be of the same type in both parts of the dataframe)
+F1Test_corr[, 2:32] <- mutate_all(F1Test_corr[, 2:32], as.numeric)
+
+corr_scores <- sort(cor(F1Train_corr[,c(2:32)])["champion",], decreasing = T)
+
+corr=data.frame(corr_scores)
+
+corr$abs_corr_scores <- abs(corr_scores)
+
+ggplot(corr,aes(x = row.names(corr), y = corr_scores)) + 
+  geom_bar(stat = "identity", fill = "lightblue") + 
+  scale_x_discrete(limits= row.names(corr)) +
+  labs(x = "", y = "champion", title = "Correlations") + 
+  theme(plot.title = element_text(hjust = 0, size = rel(1.5)),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+#Back to previous format
+F1Train_corr$champion <- ifelse(F1Train_corr$champion == 1, "Yes", "No")
+F1Test_corr$champion <- ifelse(F1Test_corr$champion == 1, "Yes", "No")
+```
+
+![](http://127.0.0.1:23563/graphics/f1b80b33-f7b5-4d86-b9b4-5bf6252b68e7.png)
+
+## 4. Predictive Analysis: Generalized Linear Model
+
+Since the target variable is binary (0 or 1), we will use the logit link function in the model and the family will be binomial We will use the glm package.
+
+For the Exploratory Data Analysis (EDA), we have concluded that the most correlated are:
+
+-   start_rate, win_rate, podium_rate, success, recent_success, many_years, years in active, races_start, pole_positions, race_wins, podiums, fastest_laps
+
+And the next most correlated would be:
+
+-   nationality, points, points_per_entry, pole_rate and decade
+
+Also, from the correlations calculated in 3.4, we know that the 7 most correlated variables to champion are: championships (that we won't use because it is supposed that if someone has 1 or more championships it is already a champion), success, podiums, race_wins, fastest_laps, pole_positions and points.
+
+Based on this information, we can develop our models.
+
+We will develop four models, each time incrementing the complexity:
+
+1.  *A benchmark model*
+2.  *A model based on all variables*
+3.  *A model based on these correlations, only considering sumations*
+4.  *A model also considering interactions between variables*
+
+### 4.1 Benchmark model
+
+We start by constructing a reference or benchmark model. It is a simple model, which always predicts the most frequent champion value (which is 0, because the vast majority of drivers in the dataset are not champions). This model provides a point of comparison for the following models, which will be more complex.
+
+```{r}
+library(pROC)
+
+F1Train$champion <- as.factor(ifelse(F1Train$champion == "Yes", 1, 0))
+
+#We do the same to the test to avoid having problems with predictions later
+F1Test$champion <- as.factor(ifelse(F1Test$champion == "Yes", 1, 0))
+
+benchmark_model <- glm(champion ~ 1, data = F1Train, family = binomial)
+
+#summary(benchmark_model)
+
+predictions_benchmark= predict(benchmark_model, newdata= F1Test)
+
+# Converting probabilities to classes (0 or 1)
+predicted_class_benchmark <- ifelse(predictions_benchmark > 0.5, 1, 0)
+
+#To validate the predictions we calculate the AUC-ROC in the testing set
+roc_curve <- roc(F1Test$champion, predicted_class_benchmark)
+auc_score <- auc(roc_curve)
+
+cat("Reference model AUC-ROC:", auc_score, "\n")
+```
+
+The reference model is not providing discriminatory information to distinguish between positive and negative classes. This makes sense, as it is a benchmark model. It returns an AUC-ROC of
+
+```         
+0.5
+```
+
+### 4.2 A model based on all variables
+
+We build a model including all predictor variables to get an overview of the relationship between the variables and the response variable. This can help us to identify possible multicollinearity problems or irrelevant variables.
+
+To avoid problems with categorical variables and their levels, we transform the character values that in fact are numbers into numeric type and remove the driver column (as all values are different in the train and the test sets) and the seasons, championships and championship_years columns (as they will not be used to predict and have many different values that maybe are not in the training and the testing set at the same time).
+
+This model returns an AUC-ROC of
+
+```         
+0.9136546
+```
+
+A score close to 1 implies that the model has correctly separated all positive and negative instances without any errors, resulting in a perfect ROC curve. While achieving a score of 1 might be indicative of a well-performing model, it's important to consider the possibility of over-fitting, specially because we are using all variables to predict.
+
+```{r}
+F1Train <- F1Train[, setdiff(names(F1Train), c("driver", "seasons", "championship_years", "championships"))]
+
+#It was character and we need it to be numerical
+F1Train$race_entries <- as.numeric(F1Train$race_entries)
+F1Test$race_entries <- as.numeric(F1Test$race_entries)
+
+full_model <- glm(champion ~ ., data = F1Train, family = "binomial")
+
+predictions_full= predict(full_model, newdata= F1Test)
+
+# Converting probabilities to classes (0 or 1)
+predicted_class_full <- ifelse(predictions_full > 0.5, 1, 0)
+
+#To validate the predictions we calculate the AUC-ROC in the testing set
+roc_curve <- roc(F1Test$champion, predicted_class_full)
+auc_score <- auc(roc_curve)
+
+cat("All variables model AUC-ROC:", auc_score, "\n")
+summary(full_model)
+```
+
+More parameters to evaluate the model: It returns an accuracy of 0.9883, a recall of 0.83 and a precision of 0.83.
+
+```{r}
+confusion_matrix <- table(observed = F1Test$champion, predicted = predicted_class_full)
+print(confusion_matrix)
+
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Accuracy:", accuracy))
+
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+print(paste("Recall:", recall))
+print(paste("Precision:", precision))
+```
+
+### 4.3 A model based the most correlated variables
+
+To simplify the model and improve interpretability. Based on the correlation graph, we select the first 6 most correlated variables to champion (we exclude championships as we explained before).
+
+This model returns an AUC-ROC of
+
+```         
+0.8303213
+```
+
+```{r}
+#In order to use effects later
+F1Train$podiums_grouped <- cut(F1Train$podiums, breaks = c(0, 5, 10, 20, 50, Inf), include.lowest = TRUE)
+#We do the same in test data
+F1Test$podiums_grouped <- cut(F1Test$podiums, breaks = c(0, 5, 10, 20, 50, Inf), include.lowest = TRUE)
+
+correlation_model <- glm(champion ~ success + podiums_grouped + race_wins + fastest_laps + pole_positions + points, data = F1Train, family = "binomial")
+
+predictions_corr= predict(correlation_model, newdata= F1Test)
+
+# Converting probabilities to classes (0 or 1)
+predicted_class_corr <- ifelse(predictions_corr > 0.5, 1, 0)
+
+#To validate the predictions we calculate the AUC-ROC in the testing set
+roc_curve <- roc(F1Test$champion, predicted_class_corr)
+auc_score <- auc(roc_curve)
+
+cat("Most correlated model AUC-ROC:", auc_score, "\n")
+
+```
+
+More parameters to evaluate the model: It returns an accuracy of 0.9826, a recall of 0.67 and a precision of 0.8
+
+```{r}
+confusion_matrix <- table(observed = F1Test$champion, predicted = predicted_class_corr)
+print(confusion_matrix)
+
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Accuracy:", accuracy))
+
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+print(paste("Recall:", recall))
+print(paste("Precision:", precision))
+```
+
+### 4.4 A model also considering interactions between variables
+
+There are only 3 categorical variables left over in the dataset: nationality, active and many_years. Although they are not the most highly correlated with champion, we will use them to introduce interaction between variables in the final model.
+
+After trying different combinations of possible interactions, even the best result for the AUC-ROC is lower than the one without interactions. The AUC-ROC here is
+
+```         
+0.8212851 
+```
+
+```{r}
+interactions_model <- glm(champion ~ success + podiums + win_rate + many_years*race_wins + fastest_laps + nationality*pole_positions + points, data = F1Train, family = "binomial")
+
+predictions_inter= predict(interactions_model, newdata= F1Test)
+
+# Converting probabilities to classes (0 or 1)
+predicted_class_inter <- ifelse(predictions_inter > 0.5, 1, 0)
+
+#To validate the predictions we calculate the AUC-ROC in the testing set
+roc_curve <- roc(F1Test$champion, predicted_class_inter)
+auc_score <- auc(roc_curve)
+
+cat("Most correlated model AUC-ROC:", auc_score, "\n")
+```
+
+More parameters to evaluate the model: It returns an accuracy of 0.9651, a recall of 0.67 and a precision of 0.5.
+
+```{r}
+confusion_matrix <- table(observed = F1Test$champion, predicted = predicted_class_inter)
+print(confusion_matrix) 
+
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Accuracy:", accuracy))
+
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+print(paste("Recall:", recall))
+print(paste("Precision:", precision))
+```
+
+### 4.5 Marginal effects for variables of model 3 (final model)
+
+The following graphs are marginal effects plots for different predictor variables in the model (correlation_model). They show how the probability of being champion (P(champion)) changes as a function of each of the predictor variables while holding all other variables constant.
+
+The centre line in the graph represents the point estimate of the marginal effect. It shows how the probability of being a champion is expected to change for different levels of the predictor variable, holding all other variables constant. It can be clearly see their behaviour for podiums_grouped, success and rate_wins.
+
+According to these plots and looking at the line of the fastest_laps, pole_positions and points variables, there is no significant effect of these predictor variables on the probability of the response variable (being champion), although the correlation values had indicated that there was.
+
+The band around the centre line represents the confidence interval around the point estimate. It is a measure of the uncertainty associated with the estimate and shows where the true values could be found with some level of confidence.
+
+Nevertheless, as the confidence bands here are very wide, it suggests a higher degree of uncertainty or variability associated with the estimated marginal effects.
+
+```{r}
+library(effects)
+
+plot(effect("podiums_grouped", correlation_model), ci.style="band", rescale.axis=FALSE, multiline=TRUE, ylab="P(champion)", rug=FALSE, main="")
+
+plot(effect("success", correlation_model), ci.style="band", rescale.axis=FALSE, multiline=TRUE, ylab="P(champion)", rug=FALSE, main="")
+
+plot(effect("race_wins", correlation_model), ci.style="band", rescale.axis=FALSE, multiline=TRUE, ylab="P(champion)", rug=FALSE, main="")
+
+plot(effect("fastest_laps", correlation_model), ci.style="band", rescale.axis=FALSE, multiline=TRUE, ylab="P(champion)", rug=FALSE, main="")
+
+plot(effect("pole_positions", correlation_model), ci.style="band", rescale.axis=FALSE, multiline=TRUE, ylab="P(champion)", rug=FALSE, main="")
+
+plot(effect("points", correlation_model), ci.style="band", rescale.axis=FALSE, multiline=TRUE, ylab="P(champion)", rug=FALSE, main="")
+```
+
+![](http://127.0.0.1:30457/graphics/3aaefc5a-ebfe-4b9d-8832-52757f36eff5.png){width="218"}
+
+![](http://127.0.0.1:30457/graphics/dc44b0e8-bd56-48e3-a54d-a9a6e410d360.png){width="235"}
+
+![](http://127.0.0.1:30457/graphics/21d15d61-ca69-4edc-976a-7aff25a79d16.png){width="226"}
+
+![](http://127.0.0.1:23563/graphics/def6bfe6-9f50-4bdd-a1bb-2da3b1984207.png){width="230"}
+
+![](http://127.0.0.1:23563/graphics/141d6eb0-4bd9-4b3f-92b5-a85795ef25f8.png){width="234"}
+
+![](http://127.0.0.1:23563/graphics/01d88dcc-05a0-4cce-a2cd-df43b49b7d7f.png){width="234"}
+
+### 4.6 Prediction intervals for final model (model 3)
+
+Looking at the graph, we see that the vast majority of non-champions are predicted to be champions, but that some champions are predicted to be non-champions.
+
+```         
+"Percentage of points inside the intervals: 98.3 %
+```
+
+We see that the prediction intervals capture the true value of the response variable in most cases. However, when interpreting the results, the interpretation of coverage can be a little more subtle due to the discrete nature of the variable, so we consider another performance metric: the area under the ROC curve.
+
+```{r}
+predictions <- predict(correlation_model, newdata = F1Test, type = "link", se.fit = TRUE)
+
+predicted_probs <- plogis(predictions$fit)
+
+# Prediction Interval limits
+lower_bound <- plogis(predictions$fit - 1.96 * predictions$se.fit)
+upper_bound <- plogis(predictions$fit + 1.96 * predictions$se.fit)
+
+# Dataframe with data
+plot_data <- data.frame(Real = F1Test$champion,
+                        Pred = predicted_probs,
+                        Lower = lower_bound,
+                        Upper = upper_bound)
+
+#Plot with prediction intervals
+ggplot(plot_data, aes(x = Real, y = Pred)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 0.1, alpha = 0.3, color = "blue") +
+  labs(title = "Plot of Real vs. Predicted with Prediction Intervals",
+       x = "Real",
+       y = "Predicted Probability")
+
+print(plot_data)
+```
+
+![](http://127.0.0.1:30457/graphics/24012eee-6fa3-4c57-8484-400e5daed513.png){width="444"}
+
+```{r}
+# Counting the points outside the intervals
+outside_interval_count <- sum(F1Test$champion != 1 & (predictions$fit - 1.96 * predictions$se.fit > 0 | predictions$fit + 1.96 * predictions$se.fit < 0))
+
+# Calculating the coverage
+total_points <- nrow(F1Test)
+coverage <- round(100 - (outside_interval_count / total_points) * 100, digits = 1)
+
+# Printing the coverage
+print(paste("Percentage of points inside the intervals:", coverage, "%"))
+```
+
+### 4.7 Performance of the final model (as a plot)
+
+X-axis (Specificity): Represents the false positive rate, i.e. the proportion of negative instances incorrectly classified as positive (non-champions classified as champions).
+
+Y-axis (Sensitivity): Represents the rate of true positives, i.e. the proportion of correctly classified positive instances (champions identified as such).
+
+The point at which the ROC curve is closest to the upper left corner is considered the ideal break-even point, as it has a high sensitivity and a low false positive rate. Our point is close to be ideal.
+
+An AUC of 1.0 indicates perfect performance.
+
+```{r}
+library(pROC)
+
+predicted_probs <- predict(correlation_model, newdata = F1Test, type = "response")  
+
+roc_curve <- roc(F1Test$champion, predicted_probs)
+
+plot(roc_curve, main = "Receiver Operating Characteristic (ROC) Curve",      col = "blue", lwd = 2) 
+
+auc_text <- paste("AUC =", round(auc(roc_curve), 2))
+legend("bottomright", legend = auc_text, col = "white", box.col = "white") 
+```
+
+![](http://127.0.0.1:30457/graphics/2160f3f9-71ef-4ac5-a1da-bfac9275adcf.png){width="429"}
