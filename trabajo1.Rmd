@@ -1,0 +1,1021 @@
+---
+title: "Case Study: Predicting "
+author: "Lara Monteserín Placer"
+date: 'UC3M, 2023/24'
+output:
+  html_document: 
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_depth: 1
+  pdf_document:
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 1
+editor_options:
+  chunk_output_type: console
+---
+
+```{r global_options, include=T, echo = F}
+knitr::opts_chunk$set(echo = T, warning=FALSE, message=FALSE)
+```
+
+# HMW PART 1
+
+## 1. Introduction
+
+On any given day, Netflix offers a vast array of content, spanning movies, series, and documentaries, with millions of viewers providing ratings on the IMDb platform. Understanding the factors that influence viewer ratings is crucial for enhancing user experience and content recommendations. In this study, we aim to predict IMDb scores for Netflix content by leveraging various features available in the dataset.
+
+![](foto.png)
+
+In this case study, we will use a data set with 15,480 instances of media contents that have been rated in IMDb, uploaded to Netflix between 2018 and 2021.
+
+### 1.1 The dataset: Description of features
+
+The dataset netflix.csv includes the following 29 variables:
+
+**\>** *Title* : Name of movie or series\
+**\>** *Genre* : Genre of movie or series\
+**\>** *Tags* : List of tags on the movie or series\
+**\>** *Languages* : Languages in which movies or series is available\
+**\>** *Series or movie* : Whether it is a movie or a series\
+**\>** *Hidden Gem Score* : Score that suggests if the movie or series is underrated. This means that it presents low review count and high rating\
+**\>** *Country Availability* : In which country the movie or series is available\
+**\>** *Runtime* : Duration of the movie or an episode of the series\
+**\>** *Director*: Name of the director of the movie or the series\
+**\>** *Writer* : Name of the writer of the movie or the series\
+**\>** *Actors*: Main actors of the movie or series\
+**\>** *View Rating*: Age classification for the viewing of movies or series **\>** *IMDb Score*: Score given to the product by IMDb\
+**\>** *Rotten Tomatoes Score*: Score given to the product by Rotten Tomatoes **\>** *Metacritic Score*: Score given to the product by Metacritic\
+**\>** *Awards Received*: Number of awards the movie or series has received\
+**\>** *Awards Nominated For*: For which awards the series or movie has been nominated **\>** *Boxoffice*: Boxoffice revenue\
+**\>** *Release Date*: When the product was released\
+**\>** *Netflix Release Date*: When the product was released on Netflix\
+**\>** *Production House*: Streaming platform in which the movie or series has been originally produced\
+**\>** *IMDb Votes*: Number of scores the movie or series has received in IMDb **\>** *IMDb Votes*: Number of scores the movie or series has received in IMDb **\>** *Netflix link*: Link for the movie or series in Netflix **\>** *IMDb link*: Link for the rating of the movie or series in IMDb\
+**\>** *Poster*: Poster of the movie or series **\>** *TMDb Trailer*: Trailer of the movie or series **\>** *Trailer Site*: Site in which the trailer of the movie or series is posted
+
+### 1.2 The goal
+
+Predict the response, the feature IMDb Score, that represents the rating given to the product by the spectator, as a function of the other variables using Linear Regression.
+
+```{r}
+library(tidyverse)
+library(MASS)
+library(caret) #for ML 200 tools
+library(e1071)
+library(lubridate)
+library(tidytext)
+
+setwd("C:/Users/laram/Desktop/Todo/UC3M/Second Bimester/Models/Assignment")
+
+# Loading and preparing data
+Netflix <- read.csv("netflix.csv")
+#Netflix$Metacritic.Score <- ifelse(Netflix$Metacritic.Score == "", runif(sum(Netflix$Metacritic.Score == ""), 0, 10), Netflix$Metacritic.Score)
+
+# Display column names in the dataset
+colnames(Netflix)
+
+```
+
+## 2. Data Preparation
+
+### 2.1 Feature extraction
+
+1.  From the "Release Date" column, we create a new column representing the age of the film or series. This will make it easier to interpret the results. To do this, we subtract the year of release from the current year. We do the same with the column "Netflix Release Date".
+
+```{r}
+#Transforming Release Date into the number of days the film or series has existed
+Netflix$Release.Date <- dmy(Netflix$Release.Date)
+Netflix$days <- as.numeric(Sys.Date() - Netflix$Release.Date)
+
+#Transforming Netflix Release Date into the number of days the film or series has been in Netflix
+Netflix$Netflix.Release.Date <- as.Date(Netflix$Netflix.Release.Date) 
+Netflix$days_in_netflix <- as.numeric(Sys.Date() - Netflix$Netflix.Release.Date)
+```
+
+2.  We count the number of words in the title and description columns and create two new columns title_words and description_words.
+
+```{r}
+# Contar la cantidad de palabras en el título
+Netflix$title_words <- sapply(strsplit(as.character(Netflix$Title), " "), length)
+
+# Analizar la longitud de la descripción
+Netflix$description_words <- nchar(as.character(Netflix$Summary))
+
+```
+
+3.  We calculate the mean obtained by each film or series in the three websites that can be found in the dataset.
+
+```{r}
+#Normalises Rotten Tomatoes and Metacritic ratings to be on the same scale as IMDb (in a scale from 1 to 10)
+Netflix$normalized_rotten <- Netflix$Rotten.Tomatoes.Score * 0.1
+Netflix$normalized_metacritic <- Netflix$Metacritic.Score * 0.1
+
+#Calculates the average of Rotten Tomatoes, Metacritic and IMDb ratings for each film.
+Netflix$average_rating <- rowMeans(Netflix[, c("normalized_rotten", "normalized_metacritic", "IMDb.Score")], na.rm = TRUE)
+
+```
+
+4.  We calculate the number of different genres in each film
+
+```{r}
+#New column nun_genders with the variety of genders
+Netflix <- Netflix %>%
+  mutate(num_genres = str_count(Genre, ', ') + 1)
+
+```
+
+5.  We calculate the variance of ratings from different sources to measure the consistency of reviews.
+
+```{r}
+Netflix$ratings_variance <- apply(Netflix[, c("normalized_rotten", "normalized_metacritic", "IMDb.Score")], 1, var, na.rm = TRUE)
+
+```
+
+6.  From the "Release Date", we extract the seasonality of the launch.
+
+```{r}
+Netflix$Release.Date <- as.Date(Netflix$Release.Date)
+
+# Creates the variable release_season based in months
+Netflix$release_season <- ifelse(month(Netflix$Release.Date) %in% 1:3, "Winter",
+                          ifelse(month(Netflix$Release.Date) %in% 4:6, "Spring",
+                          ifelse(month(Netflix$Release.Date) %in% 7:9, "Summer", "Fall")))
+```
+
+8.  We use natural language processing (NLP) techniques to analyse the sentiment in film descriptions and create a column representing a sentiment index.
+
+```{r}
+Netflix <- mutate(Netflix, Summary = as.character(Summary))
+
+# Load the AFINN-111 wordlist for sentiment analysis
+afinn <- get_sentiments("afinn")
+```
+
+```{r}
+# Perform sentiment analysis and create a new column called sentiment
+Netflix <- Netflix %>%
+  unnest_tokens(output = "word", input = Summary) %>%
+  left_join(afinn, by = "word") %>%
+  group_by(Title) %>%
+  summarize(sentiment_index = sum(value, na.rm = TRUE)) %>%
+  right_join(Netflix, by = "Title")
+```
+
+9.  In the View.Rating column there are values which meaning is the same, so we filter them.
+
+```{r}
+#Substituting all by UNRATED
+Netflix <- Netflix %>% 
+  mutate(View.Rating = ifelse(View.Rating %in% c("NOT RATED", "Unrated", "Not Rated", ""), "UNRATED", View.Rating))
+
+#Substituting all by PG13
+Netflix <- Netflix %>% 
+  mutate(View.Rating = ifelse(View.Rating %in% c("PG-13", "PG13"), "PG-thirteen", View.Rating))
+
+#Substituting all by Approved
+Netflix <- Netflix %>% 
+  mutate(View.Rating = ifelse(View.Rating %in% c("Passed", "Approved"), "Approved", View.Rating))
+
+#Substituting all by PG (Parent Guidance)
+Netflix <- Netflix %>% 
+  mutate(View.Rating = ifelse(View.Rating %in% c("GP", "PG", "TV-PG"), "PG", View.Rating))
+
+#Substituting all by GP (General Public)
+Netflix <- Netflix %>% 
+  mutate(View.Rating = ifelse(View.Rating %in% c("E", "G", "TV-G"), "G", View.Rating))
+
+#Substituting all by NC-17 (all related with being over 17)
+Netflix <- Netflix %>% 
+  mutate(View.Rating = ifelse(View.Rating %in% c("MA-17", "NC-17", "TV-MA", "X"), "NC_seventeen", View.Rating))
+
+#Substituting all by TV-Y7 (both related with being over 7)
+Netflix <- Netflix %>% 
+  mutate(View.Rating = ifelse(View.Rating %in% c("TV-Y7", "TV-Y7-FV"), "TV-Yseven", View.Rating))
+
+#Finally, we remove the remaining categories that have less than 100 associated values
+Netflix <- Netflix %>%
+  group_by(View.Rating) %>%
+  filter(n() >= 100) %>%
+  ungroup()
+
+```
+
+10. In the Genre column there are 27 different values. As they are too many to codify later as the categorical variable it is, we can group them in smaller groups.
+
+```{r}
+# A list of all the unique values in Genre
+genres <- unique(unlist(strsplit(as.character(Netflix$Genre), ", ")))
+
+#Function to assign categories
+new_category <- function(genre) {
+  if (genre %in% c("Drama", "Romance")) {
+    return("Drama and Romance")
+  } else if (genre %in% c("Horror", "Mystery", "Thriller", "Action", "Crime")) {
+    return("Action and Suspense")
+  } else if (genre %in% c("Comedy", "Musical", "Reality-TV", "Family", "Animation")) {
+    return("Comedy and Entertainment")
+  } else if (genre %in% c("Adventure", "Fantasy", "Sci-Fi")) {
+    return("Fantasy and Adventure")
+  } else if (genre %in% c("History", "Documentary", "War", "Western")) {
+    return("Historical and War")
+  } else {
+    return("Others")
+  }
+}
+
+# Aplicar la función a cada género en el dataframe
+Netflix$Genre <- sapply(Netflix$Genre, new_category)
+
+```
+
+11. In the Languages column there are 192 different values. As they are too many to codify later as the categorical variable it is, we can just create a new column representing the number of languages in which the film or series is available
+
+```{r}
+languages <- unique(unlist(strsplit(as.character(Netflix$Languages), ", ")))
+
+Netflix <- Netflix %>%
+  mutate(num_languages = str_count(Languages, ', ') + 1)
+
+```
+
+12. In the Country.Availability column there are 7520 different values. As they are too many to codify later as the categorical variable it is, we can just create a new column representing the number of countries in which the film or series is available
+
+```{r}
+ava <- unique(unlist(strsplit(as.character(Netflix$Country.Availability), ", ")))
+
+Netflix <- Netflix %>%
+  mutate(num_countries = str_count(Country.Availability, ',') + 1)
+```
+
+13. There are 6720 different values in the Director column. As they are too many to codify later as the categorical variable it is, we can assign to each director a value based on its frequency in the dataset.
+
+```{r}
+num_directors <- length(unique(Netflix$Director))
+Netflix$DirectorFreq <- as.numeric(factor(Netflix$Director, levels = unique(Netflix$Director)))
+
+```
+
+14. There are 9613 different values in the Writer column. As they are too many to codify later as the categorical variable it is, we can just create a new column representing the number of writers participating in the film or series.
+
+```{r}
+writers <- unique(unlist(strsplit(as.character(Netflix$Writer), ", ")))
+
+Netflix <- Netflix %>%
+  mutate(num_writers = str_count(Writer, ',') + 1)
+```
+
+15. There are 24807 different values in the Actors column. As they are too many to codify later as the categorical variable it is, we can just create a new column representing the number of actors participating in the film or series.
+
+```{r}
+actors <- unique(unlist(strsplit(as.character(Netflix$Actors), ", ")))
+
+Netflix <- Netflix %>%
+  mutate(num_actors = str_count(Actors, ',') + 1)
+```
+
+16. In the Runtime column, let's convert all values to the same units
+
+```{r}
+#Converting to same unit
+Netflix <- Netflix %>% 
+                mutate(runtime = case_when(
+                  Runtime == '1-2 hour' ~ 'sixty to an hour',                               Runtime == '> 2 hour' ~ '> 120 minutes',
+                  Runtime == '< 30 minutes' ~ 'lower than thirty',
+                  Runtime == '30-60 minutes' ~ '30-60 minutes'))
+```
+
+### 2.2 Selecting a relevant subset of columns and treating missing values
+
+1.  Count the missing values in each column to decide which to keep. Boxoffice, Production.House, Awards.Received, Awards.Nominated.For, Metacritic.Score (and its normalized version), Rotten.Tomatoes.Score (and its normalized version) have more than 5000 NA or empty values.
+
+    We could delete all of them, but as they can be useful to predict, let's treat these missing values. We delete Boxoffice and Production House.
+
+    ```{r}
+    # Counting NAs and empty values in each column
+    na_counts <- colSums(is.na(Netflix)| Netflix == "")
+    na_counts <- na_counts[order(-na_counts)]
+
+    #Delete those columns
+    cols_to_remove <- c("Boxoffice", "Production.House")
+
+    Netflix <- Netflix[, !(names(Netflix) %in% cols_to_remove)]
+    ```
+
+-   Substitution of the missing values by the mean in normalized_metacritic and normalized_rotten. Although there are not those many missing values in Hidden.Gem.Score, we do the same with this column.
+
+    ```{r}
+    #Converting "" values into NAs to treat them
+    Netflix$normalized_metacritic[Netflix$normalized_metacritic == ""] <- NA
+    Netflix$normalized_rotten[Netflix$normalized_rotten == ""] <- NA
+    Netflix$Hidden.Gem.Score[Netflix$Hidden.Gem.Score == ""] <- NA
+
+    #Calculating the means
+    mean_metacritic <- mean(Netflix$normalized_metacritic, na.rm = TRUE)
+    mean_rotten <- mean(Netflix$normalized_rotten, na.rm = TRUE)
+    mean_hidden <- mean(Netflix$Hidden.Gem.Score, na.rm = TRUE)
+
+    # Substitute missing values and empty strings with the mean
+    Netflix$normalized_metacritic[is.na(Netflix$normalized_metacritic)] <- mean_metacritic
+
+    Netflix$normalized_rotten[is.na(Netflix$normalized_rotten)] <- mean_rotten
+
+    Netflix$Hidden.Gem.Score[is.na(Netflix$Hidden.Gem.Score)] <- mean_hidden
+    ```
+
+    As average_rating and ratings_variance were calculated using values from these columns, now we have to recalculate them.
+
+    ```{r}
+    #Calculates the average of Rotten Tomatoes, Metacritic and IMDb ratings for each film.
+    Netflix$average_rating <- rowMeans(Netflix[, c("normalized_rotten", "normalized_metacritic", "IMDb.Score")], na.rm = TRUE)
+
+    Netflix$ratings_variance <- apply(Netflix[, c("normalized_rotten", "normalized_metacritic", "IMDb.Score")], 1, var, na.rm = TRUE)
+    ```
+
+-   Substitution of the missing values by zero in Awards.Received and Awards.Nominated.For
+
+    ```{r}
+    Netflix$Awards.Received[Netflix$Awards.Received == ""] <- NA
+    Netflix$Awards.Nominated.For[Netflix$Awards.Nominated.For == ""] <- NA
+
+    # Substitute missing values with zero
+    Netflix$Awards.Received[is.na(Netflix$Awards.Received)] <- 0
+    Netflix$Awards.Nominated.For[is.na(Netflix$Awards.Nominated.For)] <- 0
+    ```
+
+2.  From the remaining columns, some cannot be used for our purpose and some others have already given us the necessary information to create other columns, so we will delete all of them from the dataset.
+
+```{r}
+cols_to_remove <- c("Rotten.Tomatoes.Score", "Metacritic.Score", "Netflix.Link", "IMDb.Link", "Summary", "Tags", "Image", "Poster", "TMDb.Trailer", "Trailer.Site", "Country.Availability", "Director", "Writer", "Actors", "Languages", "Release.Date", "Netflix.Release.Date","Runtime")
+
+netflix <- Netflix[, !(names(Netflix) %in% cols_to_remove)]
+
+na_counts <- colSums(is.na(netflix)| netflix == "")
+na_counts <- na_counts[order(-na_counts)]
+print(na_counts)
+```
+
+We have deleted:
+
+-   The strings that are not useful to predict: Summary, Tags, Country.Availability, Languages, Director, Writer, Actors, Runtime, Netflix Link, IMDb Link, Trailer Site, IMDb Trailer (the last 4 are links).
+
+-   The original scores provided by other websites, as we now have their normalized version: Rotten Tomatoes Score and Metacritic Score.
+
+-   The images: Image and Poster
+
+-   The dates in date format: Release.Date and Netflix.Release.Date
+
+We keep the Title column in order to detect duplicate rows in the next section and to identify all films and series.
+
+There are still columns will NA and empty values, so we have to treat them. These are: days (2105 values), IMDb.Votes (2101 values), IMDb.Score (2099 values) and sentiment_index (9 values). They all present a small number of rows compared to the whole dataset, so we can just remove those rows.
+
+```{r}
+netflix <- netflix[complete.cases(netflix), ]
+na_counts <- colSums(is.na(netflix)| netflix == "")
+na_counts <- na_counts[order(-na_counts)]
+```
+
+Now we have the dataset empty of null values.
+
+### 2.3 Data cleaning
+
+We want to ensure that we are working with a reliable and accurate dataset.
+
+```{r}
+#Data types
+glimpse(netflix)
+
+#Data transformation to ensure that there are not any leading and trailing whitespaces from all character columns in the dataframe
+netflix <- netflix %>% 
+                            mutate_all(str_trim)
+
+#Standardizing and cleaning column names. Useful for ensuring that column names are consistent and easy to work with.
+library(janitor)
+netflix <- netflix %>% 
+                               clean_names()
+
+#Removing duplicates
+
+#Cuurent number of rows
+n_rows <- nrow(netflix)
+print(n_rows)
+
+#Creates a logical vector duplicate_rows indicating whether each row in the netflix data frame is a duplicate of a previous row
+duplicate_rows <- netflix %>% duplicated.data.frame()
+
+#Retains only the unique rows based on the values in the "title" column
+netflix <- netflix %>% distinct(title, .keep_all = TRUE)
+
+#Number of rows after removing duplicates
+n_rows2 <- nrow(netflix)
+print(n_rows2)
+
+#Finally, we can remove the column title, as it will not be used anymore
+#netflix1 <- subset(netflix_units, select = -title)
+```
+
+We have kept 10655 rows.
+
+### 2.4 Splitting into train and test
+
+It is always a good idea to separate from the beginning the training set (what the tool is going to see) from the testing set (used only to validate predictions).
+
+```{r}
+# split between training and testing sets: Indicate what I will predict (im_db_score) -> the target
+
+spl = createDataPartition(netflix$im_db_score, p = 0.8, list = FALSE) # 80% for training
+
+NetflixTrain = netflix[spl,]
+NetflixTest = netflix[-spl,]
+
+str(NetflixTrain)
+
+summary(NetflixTrain)
+```
+
+## 3. Explanatory Descriptive Analysis (EDA)
+
+We plot variables in order to get information, taking into account the most important variable, that is the target.
+
+### 3.1 Target variable analysis: im_db_score
+
+First, we create a boxplot of the target variable. It cannot be clearly seen, so we plot a histogram.
+
+From the histogram, we can tell that the distribution is more or less Gaussian, but it is right-skewed.
+
+In order to make it more symmetric, we try different options:
+
+-   Applying logarithms
+
+-   Applying the squared root
+
+-   Applying power transformation
+
+    -   Square elevation
+
+    -   Cubic elevation
+
+The best result is obtained when using the square elevation, so that is the one chosen to plot the distribution of the variable through the whole dataset.
+
+```{r}
+par(mfrow = c(1, 1), mar = c(2, 2, 2, 1))
+NetflixTrain$im_db_score <- as.numeric(NetflixTrain$im_db_score)
+
+#Plot the target (use only the train)
+boxplot(NetflixTrain$im_db_score) #option 1
+
+hist(NetflixTrain$im_db_score) #option 2
+
+zeros <- sum(NetflixTrain$im_db_score == 0) #no zeros
+#There are no zero values in the scores, so we can take logs without summing as we will never compute log(0)
+
+hist(log(NetflixTrain$im_db_score)) #option 3 --> taking logs
+hist(sqrt(NetflixTrain$im_db_score)) #option 4 --> squared root
+hist(NetflixTrain$im_db_score^2) #option 5 --> square elevation
+hist(NetflixTrain$im_db_score^3) #option 6 --> cubic elevation
+
+library(ggplot2)
+ggplot(NetflixTrain, aes(NetflixTrain$im_db_score^2)) + geom_density(fill="lightblue") + xlab("NetflixTrain$im_db_score^2") + ggtitle("im_db_score distribution")
+```
+
+We can see that the distribution of scores resembles a Gaussian, albeit with the mean slightly shifted towards negative values (i.e. towards scores slightly below 5 out of 10). As it is symmetric around its mean, the tails to the left and right of the mean are essentially identical in shape and size, so predicting should be easier.
+
+### 3.2 Other variables analysis respect to the target
+
+#### 3.2.1 Continuous variables
+
+To visualize the relationship between the target and continuous variables, we show scatter plots.
+
+A positive linear relationship can be discerned with the variables normalised_rotten, normalised_metacritic and average_rating.
+
+![](http://127.0.0.1:21029/graphics/7bd0e4f2-971e-49f8-a7d7-9c4ae76351e2.png)
+
+```{r}
+continuous_vars <- c("hidden_gem_score", "normalized_rotten", "normalized_metacritic", "average_rating", "ratings_variance")
+
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+
+for (variable in continuous_vars) {
+  plot(NetflixTrain[[variable]], NetflixTrain$im_db_score,
+       xlab = variable, ylab = "IMDB Score",
+       main = paste("Scatter plot -", variable))
+}
+par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
+
+```
+
+#### 3.2.2 Discrete variables
+
+We have created barplots for each discrete variable, where the height of each bar represents the average im_db_score for each value of the discrete variable.
+
+Looking at the plots, some cases where the scores appear to be higher are:
+
+-   For sentiment indices at the extremes (very high or very low).
+
+-   The higher the number of genres the film or series is classified in
+
+-   The greater the number of languages the film or series is available in
+
+Some other cases where the increase in scores is not so clear are:
+
+-   As the number of awards received or for which they have been nominated increases.
+
+-   The higher the number of words in the title or description
+
+![](http://127.0.0.1:21029/graphics/c4cf6b15-93ca-4726-aaac-a217a85ad2b6.png)
+
+![](http://127.0.0.1:21029/graphics/7af58255-a9fb-4e9a-aadf-b11512acfa99.png)
+
+![](http://127.0.0.1:21029/graphics/67e8dbbf-2f66-482b-b9b8-bd145daa5fd6.png)
+
+![](http://127.0.0.1:21029/graphics/1778cb2e-0de5-449a-b62c-ec924d54790f.png){width="470"}
+
+```{r}
+discrete_vars <- c("sentiment_index", "awards_received", "awards_nominated_for", "days", "days_in_netflix", "title_words", "description_words", "num_genres", "num_languages", "num_countries", "director_freq", "num_writers", "num_actors")
+
+NetflixTrain$im_db_score <- as.numeric(NetflixTrain$im_db_score)
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+
+for (col in discrete_vars) {
+  # Barplot
+  bar_data <- tapply(NetflixTrain$im_db_score, NetflixTrain[, col], mean)
+  barplot(bar_data, col = "lightblue", main = paste("Barplot of im_db_score by", col), xlab = col, ylab = "Mean im_db_score", cex.names = 0.7)
+}
+
+par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
+```
+
+#### 3.2.3 Categorical variables
+
+To visualize the relationship between the target and categorical variables, we both plot boxplots and barplots. Also, we plot the distribution of the target variable depending on the value of the categorical variables.
+
+1.  In the boxplots there are many outliers, individual points that are significantly outside the interquartile range (IQR). We also see a symmetric distribution for most of the variables and a low dispersion.
+
+![](http://127.0.0.1:21029/graphics/e41f53c9-698e-45f1-a0dd-62df214c9f1d.png)
+
+```{r}
+categorical_cols <- c("series_or_movie", "genre", "view_rating", "release_season", "runtime")
+
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+
+for (variable in categorical_cols) {
+  boxplot(im_db_score ~ NetflixTrain[[variable]], data = NetflixTrain,
+          col = "lightblue",
+          main = paste("IMDB Score by", variable))
+}
+
+par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
+
+```
+
+2.  In the barplots we can see that, as a general view, series, historical and war related contents lasting for 30 minutes or less are better rated than others. In he same way, we can see that variables as the release season do not seem to be useful to predict, as they show very similar scores.
+
+![](http://127.0.0.1:21029/graphics/b8c27670-3d04-48ba-8abf-acf43e7b91f1.png)
+
+```{r}
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+
+for (col in categorical_cols) {
+  bar_data <- tapply(NetflixTrain$im_db_score, NetflixTrain[, col], mean)
+  barplot(bar_data,
+          col = "lightblue",
+          main = paste("Barplot of im_db_score by", col),
+          xlab = col,
+          ylab = "im_db_score",
+          xaxt = "n")
+
+  # Rotar las etiquetas del eje x
+  axis(1, at = 1:length(bar_data), labels = names(bar_data), las=2, cex.axis = 0.9)
+
+}
+par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
+```
+
+3.  The distribution of the target variable depending on the value of the categorical variables is now plotted. We plot the distribution by: - The genre of the film or series: Historical and War followed by Drama and Romance are the ones better scored.
+
+```         
+-   The view rating: General public and unrated films get the best scores meanwhile films limited to people over 13 or by parent guidance get lower scores.
+
+-   The release season: No conclusions can be extracted here
+
+-   The runtime: The shortest the lenght of the content, the better IMDb Score.
+
+-   Series or movie: Series are better rated.
+```
+
+```{r}
+library(ggplot2)
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1))
+
+for (variable in categorical_cols) {
+  title <- paste("im_db_score distribution -", variable)
+
+  plot <- ggplot(NetflixTrain, aes(NetflixTrain$im_db_score^2)) +
+    geom_density(aes_string(group=variable, colour=variable, fill=variable), alpha=0.1) +
+    ggtitle(title)
+
+  print(plot)
+}
+
+par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
+```
+
+![](http://127.0.0.1:21029/graphics/4607d9a7-4c9c-4fb6-96c7-64c31d1c4ed9.png)
+
+![](http://127.0.0.1:21029/graphics/53557715-06bf-4167-b18d-5612d89d7087.png)
+
+![](http://127.0.0.1:21029/graphics/e28ee755-bf78-4472-8482-a23f79bc93f9.png)
+
+![](http://127.0.0.1:21029/graphics/205e0c05-6ba2-4f65-b63e-44a8f7b0012b.png)
+
+![](http://127.0.0.1:21029/graphics/1a20afa4-969e-41dd-a71f-b75dcbcd85b2.png)
+
+#### 3.2.4 Combination of categorical and continuous variables
+
+Of the 25 plots generated by combining the representation of continuous variables against the target variable (and dividing the graph into categories), only 3 of them provide us with useful information (those shown below in large size). The rest are shown in small size just below.
+
+These 3 plots confirm:
+
+-   That series and/or contents of less than 30 minutes in length present both high scores in the target variable and in the hidden_gem_score
+
+-   That hidden_gem_score shows two different linear relationships with the target variable depending on the view rating category. For contents designed for all audiences or unrated, scores are higher than for content with age restrictions for children and teenagers.
+
+```{r}
+for (continuous_var in continuous_vars) {
+  for (categorical_col in categorical_cols) {
+    title <- paste("im_db_score vs", continuous_var, "by", categorical_col)
+    
+    plot <- ggplot(NetflixTrain, aes_string(x=continuous_var, y="im_db_score^2", color=categorical_col)) +
+      geom_point(alpha=0.8) +
+      ggtitle(title)
+    
+    print(plot)
+  }
+}
+```
+
+![](http://127.0.0.1:21029/graphics/1fe685eb-1450-4fc9-bc4c-f92abb23d291.png){width="445"}
+
+![](http://127.0.0.1:21029/graphics/52bebabc-b4db-45d3-b8fb-506d2aad0fb3.png){width="463"}
+
+![](http://127.0.0.1:21029/graphics/c2937475-603d-4eb6-85f7-77cf14b571a2.png){width="473"}
+
+![](http://127.0.0.1:21029/graphics/a12a0f65-6b6d-4f37-a98f-2ee4b87a200a.png){width="187"}
+
+![](http://127.0.0.1:21029/graphics/d609b015-aee9-43a6-ab56-cc085a66407b.png){width="186"}
+
+![](http://127.0.0.1:21029/graphics/26a3dc05-8234-442a-8515-b2e93fb4b979.png){width="195"}
+
+![](http://127.0.0.1:21029/graphics/a390717e-d068-44e1-8635-193335c34a73.png){width="190"}
+
+![](http://127.0.0.1:21029/graphics/d233944f-08af-4bb0-9986-4dcf92d4defc.png){width="208"}
+
+![](http://127.0.0.1:21029/graphics/8c1ca8d4-de10-45df-911e-812119f9dec1.png){width="192"}
+
+![](http://127.0.0.1:21029/graphics/469522e4-06f5-492e-aa48-761e1137e4fb.png){width="194"}
+
+![](http://127.0.0.1:21029/graphics/f57c1c95-c3f7-4052-9a66-6d2d8c503fb5.png){width="178"}
+
+![](http://127.0.0.1:21029/graphics/192084f6-cd2b-4f80-a4fe-8205572af6c4.png){width="189"}
+
+![](http://127.0.0.1:21029/graphics/30979876-28fc-477d-a956-4f9d2c90f315.png){width="183"}
+
+![](http://127.0.0.1:21029/graphics/ea17cede-f24e-4ad2-b70d-65147d72bbab.png){width="181"}
+
+![](http://127.0.0.1:21029/graphics/0a00025b-c07c-4182-8480-ece8b41c8f3d.png){width="193"}
+
+![](http://127.0.0.1:21029/graphics/9fec3b36-e84f-4ca6-86bd-ae22193dd5f7.png){width="188"}
+
+![](http://127.0.0.1:21029/graphics/42a10484-78bf-4df4-9177-30a786adf197.png){width="181"}
+
+![](http://127.0.0.1:21029/graphics/6b5b82a5-7637-4d34-9eb2-72e5d64b7817.png){width="181"}
+
+![](http://127.0.0.1:21029/graphics/8c37e3bf-8119-408e-a99b-5ae1f462f859.png){width="190"}
+
+![](http://127.0.0.1:21029/graphics/d0e9cc49-b54e-4eed-8162-549728bbb2a5.png){width="176"}
+
+![](http://127.0.0.1:21029/graphics/b5fd2c93-75ab-4640-b990-9308d5deee77.png){width="175"}
+
+![](http://127.0.0.1:21029/graphics/39b3ea95-93fa-479a-a19b-ef3f8ada31a4.png){width="162"}
+
+![](http://127.0.0.1:21029/graphics/e4fb2699-75c7-4e2e-8c08-008b97755613.png){width="195"}
+
+![](http://127.0.0.1:21029/graphics/f2916aa9-26e5-46c3-93a4-46fe468532c4.png){width="168"}
+
+![](http://127.0.0.1:21029/graphics/39e90749-9ae2-4212-985f-911d8188ac2c.png){width="182"}
+
+### 3.3 Converting categorical variables to dummies using factor
+
+We cannot numerate categorical variables (for instance, genres from 1 to 6, as we would be giving 6 times more importance to genre 6 than to genre 1).
+
+For this reason, we need to correctly codify by creating one dummy per category (6 variables that can be rather 0 or 1, in the case of the genre). The same happens with the View Rating groups, the Release season and the Runtime. By transforming these variables into factors, R creates dummy variables for each category.
+
+This way, we will be able to calculate correlations between them and the target variable later.
+
+```{r}
+# convert categorical variables to factors
+NetflixTrain[categorical_cols] <- lapply(NetflixTrain[categorical_cols], factor)
+
+# Create dummy variables for each categorical variable
+for (col in categorical_cols) {
+  # Create dummy variables
+  dummy_variables <- model.matrix(~ -1 + as.factor(NetflixTrain[[col]]))
+  
+  # Assign names to dummy variables
+  col_names <- gsub(" ", "_", levels(NetflixTrain[[col]]))
+  col_names <- paste0(col, "_", col_names)
+  colnames(dummy_variables) <- col_names
+  
+  # Add the dummy variables to the original dataset
+  NetflixTrain <- cbind(NetflixTrain, dummy_variables)
+}
+
+# Remove the original variables
+NetflixTrain <- NetflixTrain[, !(names(NetflixTrain) %in% categorical_cols)]
+```
+
+We do the same to the testing set to be able to predict in the future (as the variables have to be of the same type in both parts of the dataframe)
+
+```{r}
+# convert categorical variables to factors
+NetflixTest[categorical_cols] <- lapply(NetflixTest[categorical_cols], factor)
+
+# Create dummy variables for each categorical variable
+for (col in categorical_cols) {
+  # Create dummy variables
+  dummy_variables <- model.matrix(~ -1 + as.factor(NetflixTest[[col]]))
+  
+  # Assign names to dummy variables
+  col_names <- gsub(" ", "_", levels(NetflixTest[[col]]))
+  col_names <- paste0(col, "_", col_names)
+  colnames(dummy_variables) <- col_names
+  
+  # Add the dummy variables to the original dataset
+  NetflixTest <- cbind(NetflixTest, dummy_variables)
+}
+
+# Remove the original variables
+NetflixTest <- NetflixTest[, !(names(NetflixTest) %in% categorical_cols)]
+```
+
+### 3.4 Calculating correlations between IMDb Scores and other variables
+
+Out of the 26 variables (simple regressions) that we have, we should decide which is he best one to predict (one beta). This variable will be the one that is more correlated with IMDb Scores.
+
+To know which are the most correlated variables with IMDb Scores, we sort the variables by the correlation. The correlation between the target and the target is always 1. We add it so that it scales respect to 1 (with an informative purpose).
+
+```{r}
+#We select the colums that are not categorical to perform the correlation calculations
+
+#NetflixTrain[,c(2, 5, 7, 8, 9, 11:19, 21:25)] <- sapply(NetflixTrain[,c(2, 5, 7, 8, 9, 11:19, 21:25)], as.numeric)
+
+#corr_scores <- sort(cor(NetflixTrain[,c(2, 5, 7, 8, 9, 11:19, 21:25)])["im_db_score",], decreasing = T)
+
+library(dplyr)
+
+NetflixTrain[, 2:44] <- mutate_all(NetflixTrain[, 2:44], as.numeric)
+
+#We do the same to the testing set to be able to predict in the future (as the variables have to be of the same type in both parts of the dataframe)
+NetflixTest[, 2:44] <- mutate_all(NetflixTest[, 2:44], as.numeric)
+
+corr_scores <- sort(cor(NetflixTrain[,c(2:44)])["im_db_score",], decreasing = T)
+
+corr=data.frame(corr_scores)
+
+corr$abs_corr_scores <- abs(corr_scores)
+
+ggplot(corr,aes(x = row.names(corr), y = corr_scores)) + 
+  geom_bar(stat = "identity", fill = "lightblue") + 
+  scale_x_discrete(limits= row.names(corr)) +
+  labs(x = "", y = "im_db_score", title = "Correlations") + 
+  theme(plot.title = element_text(hjust = 0, size = rel(1.5)),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+![](http://127.0.0.1:21029/graphics/9f989441-591a-4025-ab67-97c6269d1f1f.png)
+
+```{r}
+# Reordenar el dataframe por valor absoluto
+corr <- corr[order(corr$abs_corr_scores, decreasing = TRUE), ]
+
+ggplot(corr, aes(x = row.names(corr), y = abs_corr_scores, fill = corr_scores < 0)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_x_discrete(limits = row.names(corr)) +
+  labs(x = "", y = "Absolute im_db_score", title = "Correlations") +
+  scale_fill_manual(values = c("lightblue", "salmon")) +
+  theme(plot.title = element_text(hjust = 0, size = rel(1.5)),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+![](http://127.0.0.1:21029/graphics/c236bd4c-a04a-4a39-9bfd-fdc577ae4e84.png)
+
+As all the correlations are quite low, we cannot predict well (sigma squared is high).
+
+## 4. Predictive Analysis: Linear Regression
+
+We will develop five models, each time incrementing the complexity:
+
+1.  *A simple regression model*
+2.  *A benchmark model*
+3.  *A model based on all variables*
+4.  *A model based on these correlations, only considering sumations*
+5.  *A model also considering interactions between variables*
+
+### 4.1 Benchmark model
+
+We start by constructing a reference or benchmark model. It is a simple model,
+
+This model provides a point of comparison for the following models, which will be more complex.
+
+```{r}
+
+```
+
+### 4.2 Simple regression model
+
+We first try first the most relevant predictor from previous analysis. We will not use average_rating, as it has been calculated using the target variable and the result would be biased, so we will use the next one that is more relevant: normalized_rotten.
+
+```{r}
+linFit <- lm(im_db_score^2 ~ normalized_rotten, data=NetflixTrain)
+summary(linFit)
+```
+
+```         
+Residuals:    
+Min      1Q  Median      3Q     Max 
+-42.228  -8.168  -0.173   7.432  51.112
+
+Coefficients:                   
+               Estimate Std. Error t value Pr(>|t|)     
+(Intercept)    23.66220    0.46818   50.54   <2e-16 *** normalized_rotten  3.25011 0.07635   42.57   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 13.15 on 8557 degrees of freedom
+Multiple R-squared:  0.1748,    Adjusted R-squared:  0.1747
+F-statistic:  1812 on 1 and 8557 DF,  p-value: < 2.2e-16
+```
+
+The **median** is close to 0, indicating that, on average, the residuals are centered around 0.
+
+**Intercept (23.66220):** It is the estimated intercept of the regression line (beta0). When the `normalized_rotten` variable is 0, the estimated value of `im_db_score^2` is 23.66220.
+
+**normalized_rotten (3.25011):** It is the estimated coefficient for the `normalized_rotten` variable (beta1). It represents the change in the dependent variable (`im_db_score^2`) for a one-unit change in the independent variable (`normalized_rotten`). For each one-unit increase in `normalized_rotten`, the estimated `im_db_score^2` increases by 3.25011.
+
+**Residual Standard Error (13.15):** It is an estimate of the standard deviation of the residuals. It gives an idea of the average distance between the observed and predicted values (how noisy is the beta). If the noise is very small, the p-value is very small.
+
+To get the answer in the correct scale, we take the squared root of the number. When transforming the original variable back, we obtain: sqrt(13.15) = 3,62629, that is the noise.
+
+**Multiple R-squared (0.1748):** It represents the proportion of the variance in the dependent variable (`im_db_score^2`) that is predictable from the independent variable `normalized_rotten` (so it is the information). Approximately 17.48% of the variance is explained by `normalized_rotten`, which means that there is a 82,52% of noise respect to the beta.
+
+In simple models there is no co-linearity by definition, as there is only one column.
+
+#### 4.2.1 Diagnosis
+
+```{r}
+par(mfrow=c(2,2))
+plot(linFit, pch=23 ,bg='orange',cex=2)
+```
+
+![](http://127.0.0.1:21029/graphics/9dca9aeb-fd13-439c-b30a-1ebb7df8e269.png)
+
+If beta = 0 the application is useless and the line is completely horizontal.
+
+By looking at the performance in the training we want the predictions in the testing, so we do the predict.
+
+#### 4.2.2 Prediction
+
+```{r}
+# Take care: output is squared powered
+predict(linFit, newdata = NetflixTest) #to predict new scores and not only the training scores
+
+predictions = sqrt(predict(linFit, newdata = NetflixTest))
+cor(predictions,NetflixTest$im_db_score)^2
+```
+
+```         
+Result: 0.1567901
+```
+
+**R-squared (0.15):** Now only approximately 15% of the variance in the predicted values is explained by the variability in the **`im_db_score`** values, that is a 2.48% less than in the training set. This suggests that the model's performance is worse when making predictions on new data.
+
+### 4.3 A model based on all variables: multiple regression
+
+```{r}
+
+```
+
+### 4.4 A model based on correlations
+
+```{r}
+
+```
+
+Now we will include more variables in the model, in order to improve the prediction accuracy.
+
+```{r} #model_formula <- as.formula("im_db_score^2 ~ normalized_rotten + series_or_movie_Series + normalized_metacritic + awards_nominated_for + awards_received + im_db_votes + hidden_gem_score + genre_Historical_and_War + runtime_lower_than_thirty + view_rating_NC_seventeen + I(normalized_rotten^2) + I(series_or_movie_Series^2) + I(normalized_metacritic^2) + I(awards_nominated_for^2) + I(awards_received^2) + I(im_db_votes^2) + I(hidden_gem_score^2) + I(genre_Historical_and_War^2) + I(runtime_lower_than_thirty^2) + I(view_rating_NC_seventeen^2) ")  model_formula <- as.formula("im_db_score^2 ~ normalized_rotten + series_or_movie_Series + normalized_metacritic + awards_nominated_for + awards_received + hidden_gem_score + genre_Historical_and_War + runtime_lower_than_thirty + view_rating_NC_seventeen + I(normalized_rotten^2) + I(series_or_movie_Series^2) + I(normalized_metacritic^2) + I(awards_nominated_for^2) + I(awards_received^2) + I(hidden_gem_score^2) + I(genre_Historical_and_War^2) + I(runtime_lower_than_thirty^2) + I(view_rating_NC_seventeen^2) ")  linFit <- lm(model_formula, data = NetflixTrain)}
+```
+
+Prediction:
+
+```{r} predictions <- sqrt(predict(linFit, newdata = NetflixTest))  cor(NetflixTest$im_db_score, predictions)^2}
+```
+
+```         
+0.4280473
+```
+
+### 4.5 A model with interactions
+
+A multiple regression model with interactions:
+
+```{r}
+linFit <- lm(log(TotalDelay+10) ~ OriginAvgWind + OriginPrecip + DestAvgWind + DestPrecip + HistoricallyLate +                OriginPrecip:DestPrecip, data=AirlinesTrain)
+summary(linFit)
+pred.log <- predict(linFit, newdata=AirlinesTest)
+cor(log(AirlinesTest$TotalDelay+10), pred.log)^2 
+```
+
+R2 in the training is 10%
+
+R2 in the testing is around 10%
+
+#### An even more advanced model using categorical variables
+
+for instance, Flight has 6 categories but R creates 5 dummies, why?
+
+Useful to incorporate interactions between categorical variables and numeric ones
+
+```{r}
+linFit <- lm(log(TotalDelay+10) ~ Flight*(OriginAvgWind+OriginPrecip+DestAvgWind+DestPrecip+OriginWindGust+HistoricallyLate)+I(HistoricallyLate^2)+OriginPrecip:DestPrecip, data=AirlinesTrain)
+summary(linFit) 
+pred.log <- predict(linFit, newdata=AirlinesTest)
+cor(log(AirlinesTest$TotalDelay+10), pred.log)^2 
+```
+
+R2 in the training is 14%
+
+R2 in the testing is around 14%
+
+Note the multiple regression model including all the variables is still the best
+
+**Important question:** how do we know we are doing well?
+
+Always consider a benchmark model (or a reference)
+
+For instance, we can predict all the new delays as the average delay in the training set
+
+```{r}
+mean(log(AirlinesTrain$TotalDelay+10)) # This is equivalent to benchFit <- lm(log(TotalDelay+10) ~ 1, data=AirlinesTrain)
+pred.bench <- predict(benchFit, newdata=AirlinesTest)
+```
+
+```{r, eval=F}
+cor(log(AirlinesTest$TotalDelay+10), pred.bench)^2
+```
+
+Why cannot we compute the R2?
+
+```{r}
+mean(abs(log(AirlinesTest$TotalDelay+10)- pred.bench)/log(AirlinesTest$TotalDelay+10)) sqrt(mean((pred.bench - log(AirlinesTest$TotalDelay+10))^2))
+```
+
+The naive prediction is about 10% worse than our best model
+
+### 4.6 Prediction Intervals
+
+```{r}
+y = NetflixTest$im_db_score
+yhat = sqrt(pred.log)
+```
+
+How can we compute prediction intervals?
+
+```{r}
+pred.log <- predict(linFit, newdata=AirlinesTest, interval="prediction")  # Assuming pred.log contains the lower and upper prediction intervals
+AirlinesTest$Pred = exp(pred.log[, "fit"]) - 10
+AirlinesTest$Real = y
+AirlinesTest$Lower = exp(pred.log[, "lwr"]) - 10
+AirlinesTest$Upper = exp(pred.log[, "upr"]) - 10  # Prediction Interval Plot
+AirlinesTest %>% arrange(HistoricallyLate) %>% ggplot(aes(x = HistoricallyLate, y = y)) +   geom_point() +   geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +   labs(title = "Prediction Intervals", y = "Real Delays") +   theme_minimal()  
+```
+
+What is the coverage?
+
+```{r}
+# Counting the points outside the intervals
+outside_interval_count <- sum(AirlinesTest$Real < AirlinesTest$Lower | AirlinesTest$Real > AirlinesTest$Upper)
+# Calculating the coverage
+total_points <- nrow(AirlinesTest) coverage <- round(100-(outside_interval_count / total_points) * 100, digits=1) 
+# Printing the coverage
+print(paste("Percentage of points inside the intervals:", coverage, "%")) 
+```
+
+And what about prediction intervals from machine learning?
