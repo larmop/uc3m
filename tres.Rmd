@@ -1,0 +1,959 @@
+---
+title: "Case Study: Statistical and ML tools "
+author: "Lara Monteserín Placer"
+date: 'UC3M, 2023/24'
+output:
+  html_document: 
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_depth: 1
+  pdf_document:
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 1
+editor_options:
+  chunk_output_type: console
+---
+
+```{r global_options, include=T, echo = F}
+knitr::opts_chunk$set(echo = T, warning=FALSE, message=FALSE)
+
+```
+
+# HMW 2
+
+## 1. Introduction
+
+On any given day, cinemas offers a vast array of film, with millions of spectators spending money on it. Understanding the factors that influence total sales is crucial. In this study, we aim to predict the total amount of sales for films in different cinemas by leveraging various features available in the dataset.
+
+Some of the advantages of forecasting future sales are:
+
+-   Sales drive everything else and help determine the organisation's production plan.
+
+-   It allows filmmakers to effectively allocate resources for future growth and to manage their finances and contracts.
+
+-   It enables ongoing strategic planning: by knowing the rate of future sales, filmmakers can improve pricing, product development and advertising.
+
+![](foto.jpg){width="385"}
+
+In this case study, we will use a data set with 142525 instances of films screened in cinemas in 2018.
+
+We took the dataset from Kaggle: <https://www.kaggle.com/datasets/arashnic/cinema-ticket/data>
+
+### 1.1 The dataset: Description of features
+
+The dataset cinemaTicket_Ref.csv includes the following 14 variables:
+
+1.  **film_code**: A unique identifier for each film in the dataset.
+
+2.  **cinema_code**: A unique code assigned to each cinema in the dataset.
+
+3.  **total_sales**: The total revenue generated from ticket sales for a specific film and cinema.
+
+4.  **tickets_sold**: The total number of tickets sold for a particular film and cinema.
+
+5.  **tickets_out**: The number of tickets that were distributed or printed for a specific film and cinema.
+
+6.  **show_time**: The duration of the film screening in minutes.
+
+7.  **occu_perc**: The percentage of occupancy in the cinema during the film screening.
+
+8.  **ticket_price**: The price of a single movie ticket.
+
+9.  **ticket_use**: The number of tickets used or collected during the film screening.
+
+10. **capacity**: The maximum seating capacity of the cinema.
+
+11. **date**: The date on which the film was screened.
+
+12. **month**: The month in which the film screening occurred.
+
+13. **quarter**: The quarter of the year in which the film screening took place.
+
+14. **day**: The day of the week on which the film was screened.
+
+### 1.2 The goal
+
+Predict the response, the feature total_sales, that represents the total revenue generated from ticket sales for a specific film and cinema, as a function of the other variables using both Statistical and ML tools.
+
+```{r}
+library(tidyverse)
+library(MASS)
+library(e1071)
+library(caret)
+library(lubridate)
+library(tidytext)
+
+setwd("C:/Users/laram/Desktop/Todo/UC3M/Second Bimester/Models/Assignment2")
+cinema <- read.csv("cinemaTicket_Ref.csv")
+
+# Display column names in the dataset
+colnames(cinema)
+
+#dim(cinema)
+#str(cinema)
+#summary(cinema)
+```
+
+## 2. Data Preparation
+
+### 2.1 Feature extraction
+
+We have created a column ratio_used, representing the number of tickets sold that are finally used.
+
+But first, we have noticed that there are some negative values in ticket_use, what does not make any sense as it is the number of tickets used or collected during the film screening. As there are only 65? negative values for this feature, we will just remove instances with negative values for ticket_use.
+
+```{r}
+before_rows <- nrow(cinema)
+#print(before_rows)
+cinema <- cinema[cinema$ticket_use >= 0, ]
+after_rows <- nrow(cinema)
+#print(after_rows)
+
+cinema$ratio_used <- cinema$ticket_use / cinema$tickets_sold
+```
+
+### 2.2 Data cleaning
+
+We want to ensure that we are working with a reliable and accurate dataset.
+
+Until now, we have 142463 instances.
+
+There are only 2 columns (occu_perc and capacity) with null values and there are 125 null values in each. As this value is very low compared to the size of the dataset, we will just remove those instances, so we keep 142338 instances.
+
+When first removing duplicates, we find out that there are just 104 duplicated values. Anyway, if we count the unique values in film_code and cinema_code, there are only 48 and 244 respectively. Although they represent different information, in order to avoid problems when predicting, we will create a new ID that will be the concatenation of film_code, cinema_code and ID: id. Now, filtering by this new ID, we are not losing any other instance.
+
+```{r}
+# Counting NAs and empty values in each column
+na_counts <- colSums(is.na(cinema) | cinema == "")
+na_counts <- na_counts[order(-na_counts)]
+#print(na_counts)
+
+# Removing instances with null values
+cinema <- cinema[complete.cases(cinema), ]
+
+#Data types
+glimpse(cinema)
+
+#Data transformation to ensure that there are not any leading and trailing whitespaces from all character columns in the dataframe
+cinema <- cinema %>% mutate_all(str_trim)
+
+#Standardizing and cleaning column names. Useful for ensuring that column names are consistent and easy to work with.
+library(janitor)
+cinema <- cinema%>% clean_names() 
+
+#Current number of rows
+n_rows <- nrow(cinema)
+#print(n_rows)
+
+#Creates a logical vector duplicate_rows indicating whether each row in the data frame is a duplicate of a previous row
+duplicate_rows <- cinema %>% duplicated.data.frame()
+
+#Retains only the unique rows
+library(dplyr)
+cinema <- distinct(cinema)
+
+#Number of rows after removing duplicates
+n_rows2 <- nrow(cinema)
+#print(n_rows2)
+
+# Duplicates based on column "film_code"
+cinema1 <- cinema %>% distinct(film_code, .keep_all = TRUE)
+
+# Duplicates based on column "cinema_code"
+cinema2 <- cinema %>% distinct(cinema_code, .keep_all = TRUE)
+
+n_rows3 <- nrow(cinema1)
+n_rows4 <- nrow(cinema2)
+#print(n_rows3)
+#print(n_rows4)
+
+#Creating the new ID
+cinema$id <- paste(cinema$film_code, cinema$cinema_code, cinema$date, sep="_")
+
+#We know filter by the new id
+cinema <- cinema %>% distinct(id, .keep_all = TRUE)
+
+n_rows5 <- nrow(cinema)
+#print(n_rows5)
+```
+
+### 2.3 Splitting into train and test
+
+It is always a good idea to separate from the beginning the training set (what the tool is going to see) from the testing set (used only to validate predictions).
+
+```{r}
+# split between training and testing sets
+spl = createDataPartition(cinema$total_sales, p = 0.8, list = FALSE)
+cineTrain = cinema[spl,]
+cineTest = cinema[-spl,]
+
+#str(cineTrain)
+#summary(cineTrain)
+```
+
+## 3. Explanatory Descriptive Analysis (EDA)
+
+We plot variables in order to get information, taking into account the most important variable, that is the target.
+
+### 3.1 Target variable analysis: total sales
+
+We plot a histogram of the target variable. As most of the values are close to zero, we cannot see anything so we apply logarithms to the target.
+
+From the new histogram, we can tell that the distribution is Gaussian.
+
+As there are no values that are zero in the target, we do not need to add any constant to the logarithm.
+
+```{r}
+par(mfrow = c(1, 1), mar = c(2, 2, 2, 1))
+
+cineTrain$total_sales <- as.numeric(cineTrain$total_sales)
+cineTest$total_sales <- as.numeric(cineTest$total_sales)
+
+#As there are no zeros, there is no danger in calculating log(0) so we do not have to sum any constant
+zero_sales_count <- sum(cinema$total_sales == 0)
+
+#Plot the target (use only the train)
+hist(cineTrain$total_sales) # option 1
+
+hist(log(cineTrain$total_sales)) # option 2 --> taking logs
+
+ggplot(cineTrain, aes(log(cineTrain$total_sales))) + geom_density(fill="lightblue") + xlab("cineTrain$total_sales") + ggtitle("total_sales distribution")
+
+```
+
+### 3.2 Other variables analysis respect to the target
+
+#### 3.2.1 Continuous variables
+
+To visualize the relationship between the target and continuous variables, we show scatter plots. To do this correctly, we transform all columns that are of type character although they are in fact numeric, into numeric type.
+
+A positive linear relationship can be discerned with the variables occu_perc and capacity. Also, an exponential/logarithmic (we cannot know it without applying more transformations) relationship can be seen with ticket_price and ratio_used. In any case, there is a positive relationship.
+
+```{r}
+to_exclude <- c("id", "date")
+
+cineTrain <- cineTrain %>%
+  mutate_at(vars(-all_of(to_exclude)), as.numeric)
+
+cineTest <- cineTest %>%
+  mutate_at(vars(-all_of(to_exclude)), as.numeric)
+
+continuous_vars <- c("occu_perc", "ticket_price", "capacity", "ratio_used")
+
+par(mfrow = c(1, 1), mar = c(4, 4, 2, 1))
+
+for (variable in continuous_vars) {
+  plot(cineTrain[[variable]], cineTrain$total_sales,
+       xlab = variable, ylab = "Total Sales",
+       main = paste("Scatter plot -", variable))
+}
+```
+
+#### 3.2.2 Discrete variables
+
+We have created barplots for each discrete variable, where the height of each bar represents the average total sales for each value of the discrete variable. We add date although it is not a discrete variable, because it is the only categorical one and a bar plot is enough to see how it behaves.
+
+Looking at the plots, some cases where the scores appear to be higher are:
+
+-   For some specific films and cinemas, values are higher
+
+-   The higher the number of tickets_sold
+
+-   The greater the number of ticket_use
+
+-   In the first quarter of the year (also in months 2, 3 and 4 and during the first part of the plot "date", so it is consistent).
+
+Some other cases where the increase in scores is not so clear are:
+
+-   During some days of the month. These are probably Fridays, Saturdays or spectator's days, but we cannot know it as there is no data that can relate numbers to week days.
+
+-   The higher the show_time
+
+```{r}
+discrete_vars <- c("film_code", "cinema_code", "tickets_sold", "tickets_out", "show_time", "ticket_use", "month", "quarter", "day", "date")
+
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))
+
+for (col in discrete_vars) {
+  # Barplot
+  bar_data <- tapply(cineTrain$total_sales, cineTrain[, col], mean)
+  barplot(bar_data, col = "lightblue", main = paste("Barplot of total_sales by", col), xlab = col, ylab = "Mean total sales", cex.names = 0.7)
+}
+```
+
+### 3.3 Calculating correlations between total sales and other variables
+
+Out of the 15 variables (simple regressions) that we have, we should decide which is he best one to predict (one beta). This variable will be the one that is more correlated with total_sales.
+
+To know which are the most correlated variables with total_sales, we sort the variables by the correlation. The correlation between the target and the target is always 1. We add it so that it scales respect to 1 (with an informative purpose).
+
+To be able to calculate the correlation of the date with the target, we need it to transform its format before. Also, we exclude the ID for the calculation of correlations.
+
+As we just want to do this for extracting correlations, we will create a new cineTrain_corr in order to not modify the original, that we will use to predict.
+
+```{r}
+cineTrain_corr <- cineTrain
+cineTest_corr <- cineTest
+
+cineTrain_corr$date <- as.Date(cineTrain_corr$date)
+cineTest_corr$date <- as.Date(cineTest_corr$date)
+
+cineTrain_corr[, 1:15] <- mutate_all(cineTrain_corr[, 1:15], as.numeric)
+#We do the same to the testing set to be able to predict in the future (as the variables have to be of the same type in both parts of the dataframe)
+cineTest_corr[, 1:15] <- mutate_all(cineTest_corr[, 1:15], as.numeric)
+
+corr_scores <- sort(cor(cineTrain_corr[, 1:15])["total_sales",], decreasing = T)
+
+corr = data.frame(corr_scores)
+
+corr$abs_corr_scores <- abs(corr_scores)
+
+ggplot(corr, aes(x = row.names(corr), y = corr_scores)) +
+  geom_bar(stat = "identity", fill = "lightblue") +
+  scale_x_discrete(limits= row.names(corr)) +
+  labs(x = "", y = "total_sales", title = "Correlations") +
+  theme(plot.title = element_text(hjust = 0, size = rel(1.5)),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+# Reordering the dataframe by absolute values
+corr <- corr[order(corr$abs_corr_scores, decreasing = TRUE), ]
+ggplot(corr, aes(x = row.names(corr), y = abs_corr_scores, fill = corr_scores < 0)) +
+  geom_bar(stat = "identity", color = "black") +
+  scale_x_discrete(limits = row.names(corr)) +
+  labs(x = "", y = "Absolute total sales", title = "Correlations") +
+  scale_fill_manual(values = c("lightblue", "salmon")) +
+  theme(plot.title = element_text(hjust = 0, size = rel(1.5)),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+We can see that most of the correlations are quite low, we will not be able to predict very well (sigma squared is high). In any case, there are two features, tickets_sold and ticket_use, that are highly correlated with the target (which is reasonable), and also show_time, occu_perc and capacity seem to be correlated to the target in some way.
+
+## \* Something to point out
+
+The dataset we have chosen is that big that none of the models can be defined because there is a problem:
+
+*Error: cannot allocate vector of size X Gb*
+
+As this assignment is not about applying techniques of dimensionality reduction, we will just choose the first 1% of the instances of both the train and the testing data of the dataset.
+
+```{r}
+# Define the percentage of instances to select
+percentage <- 0.01
+
+# Select the first 10% of instances for both train and test datasets
+cineTrain_small <- head(cineTrain, round(nrow(cineTrain) * percentage))
+cineTest_small <- head(cineTest, round(nrow(cineTest) * percentage))
+
+```
+
+## 4. Benchmark model
+
+We start by constructing a reference or benchmark model. As we are dealing with numerical continuous target, we will consider the benchmark as predicting the mean (still using the logarithm transformation).
+
+This model provides a point of comparison for the following models, which will be more complex. As on the mean predictor the *R_squared* can not be computed, we will use the RMSE to compare it to the rest of the models and we obtain a value of 4.06.
+
+```{r}
+mean(cineTrain_small$total_sales)
+
+# This is equivalent to
+benchFit <- lm(log(total_sales) ~ 1, data=cineTrain_small
+               )
+predictions <- predict(benchFit, newdata=cineTest_small)
+actual_values <- log(cineTest_small$total_sales)
+residuals <- actual_values - predictions
+
+rmse <- exp(mean(residuals^2))
+cat("RMSE benchmark model:", rmse, "\n")
+```
+
+## 5. Simple and multiple regression
+
+We will develop three models:
+
+1.  *A simple regression model*
+2.  *A model based on all features (prone* *to overfitting)*
+3.  *A model based on the previous correlations, the best model for multiple regression.*
+
+### 5.1 Simple regression model
+
+We first try first the most relevant predictor from previous analysis: tickets_sold. Results are a little bit better than the benchmark for this first model (RMSE is 2.63).
+
+```{r}
+linFit <- lm(log(total_sales) ~ tickets_sold, data=cineTrain_small)
+#summary(linFit)
+
+# Take care: output is exp
+predictions = predict(linFit, newdata = cineTest_small)
+actual_values <- log(cineTest_small$total_sales)
+
+residuals <- actual_values - predictions
+rmse_simple <- exp(mean(residuals^2))
+
+cat("RMSE simple model:", rmse_simple, "\n")
+```
+
+### 5.2 Model using all features
+
+If we want to fix the hyper-parameters (no tuning), then no trainControl is needed
+
+```{r}
+ctrl <- trainControl(method = "none")
+```
+
+The train function sets up a grid of tuning parameters for a number of classification and regression routines, fits each model and calculates a re-sampling based performance measure.
+
+To avoid problems with categorical variables and their levels, we remove the date and the id columns (as all values are different in the train and the test sets, it is the ID). We could transform date into numeric, but as its correlation to the target is that small, it is not worthy.
+
+```{r}
+cineTrain_small <- cineTrain_small[, setdiff(names(cineTrain_small), c("date", "id"))]
+
+allF_model = total_sales ~ .
+
+lm_tune <- train(allF_model,
+                 data = cineTrain_small, 
+                 method = "lm", 
+                 preProc=c('scale', 'center'),
+                 trControl = ctrl)
+
+test_results <- data.frame(total_sales = log(cineTest_small$total_sales))
+
+test_results$lm_1 <- predict(lm_tune, cineTest_small)
+
+observed = log(log(cineTest_small$total_sales))
+
+x = postResample(pred = test_results$lm_1,  obs = observed)
+
+results <- data.frame(Method= "all_features", RMSE = x[1], R2 = x[2], MAE = x[3], stringsAsFactors = FALSE)
+#print(results)
+```
+
+```{r}
+ggplot(test_results, aes(x = lm_1, y = total_sales)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  # Add a reference line (y = x)
+  labs(title = "True vs Predicted Values",
+       x = "Predicted Values (lm_1)",
+       y = "True Values (gain)")
+```
+
+As a result, we can see that the error is really high andR squared is only 0.54.
+
+### 5.2 Model using the most correlated features
+
+Now, we will only use the most correlated features. We have also added interactions.
+
+```{r}
+correlated_model = total_sales ~ tickets_sold:ticket_use + show_time + occu_perc:capacity
+
+lm_tune <- train(correlated_model,
+                 data = cineTrain_small, 
+                 method = "lm", 
+                 preProc=c('scale', 'center'),
+                 trControl = ctrl)
+
+test_results <- data.frame(total_sales = log(cineTest_small$total_sales))
+
+test_results$lm_1 <- predict(lm_tune, cineTest_small)
+
+observed = log(log(cineTest_small$total_sales))
+
+x = postResample(pred = test_results$lm_1,  obs = observed)
+
+results <- data.frame(Method= "correlated_features", RMSE = x[1], R2 = x[2], MAE = x[3], stringsAsFactors = FALSE)
+#print(results)
+```
+
+```{r}
+ggplot(test_results, aes(x = lm_1, y = total_sales)) +
+  geom_point() +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +  # Add a reference line (y = x)
+  labs(title = "True vs Predicted Values",
+       x = "Predicted Values (lm_1)",
+       y = "True Values (gain)")
+```
+
+Here the error is a little bit smaller but R squared is still the same.
+
+## 5. Statistical Learning Tools
+
+Let's use the caret package with CV.
+
+```{r}
+ctrl <- trainControl(method = "repeatedcv", 
+                     number = 5, repeats = 1)
+```
+
+### 5.1. Model selection
+
+#### 5.1.1. Forward selection
+
+The goal of forward selection is to iteratively add predictor variables to a model one at a time, selecting the variable that contributes the most to the model's performance at each step. This process continues until a stopping criterion is met.
+
+```{r}
+Model_forw = total_sales ~ tickets_sold:ticket_use + show_time + occu_perc:capacity + ticket_price + month:quarter + log(ratio_used)
+
+tune <- train(Model_forw, data = cineTrain_small, 
+                  method = "leapForward", 
+                  preProc=c('scale', 'center'),
+                  tuneGrid = expand.grid(nvmax = 2:6), #for the hyperparam tuning of the method (defines the number of variables to consider)
+                  trControl = ctrl)
+
+plot(tune)
+```
+
+The plot suggests us to only keep the first 3 parameters, as after that we will not reduce the RMSE. Selected variables are ticket_price, tickets_sold:ticket_use and occu_perc:capacity.
+
+```{r}
+coef(tune$finalModel, tune$bestTune$nvmax)
+```
+
+```{r}
+test_results$frw <- predict(tune, cineTest_small)
+x= postResample(pred = test_results$frw,  obs = test_results$total_sales)
+
+results2 <- c("Forward", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results2)
+#print(results)
+```
+
+RMSE is bigger here than in the previous model.
+
+```{r}
+qplot(test_results$frw, test_results$total_sales) + 
+  labs(title="Forward Regression Observed VS Predicted", x="Predicted", y="Observed") +
+  lims(x = c(10, 15), y = c(10, 15)) +
+  geom_abline(intercept = 0, slope = 1, colour = "blue") +
+  theme_bw()
+```
+
+#### 5.1.2. Backward selection
+
+We use the model that we defined before for the forward selection, but now the modeling process starts with a model that includes all predictor variables and iteratively removes the least significant variables one at a time. The goal is to simplify the model while retaining those variables that are most relevant to the response variable.
+
+```{r}
+back_tune <- train(Model_forw, data = cineTrain_small, 
+                   method = "leapBackward", 
+                   preProc=c('scale', 'center'),
+                   tuneGrid = expand.grid(nvmax = 2:6),
+                   trControl = ctrl)
+plot(back_tune)
+```
+
+The plot suggests us to only keep the first 3 parameters, as after that we will not reduce the RMSE. Selected variables are ticket_price, tickets_sold:ticket_use and occu_perc:capacity.
+
+```{r}
+coef(back_tune$finalModel, back_tune$bestTune$nvmax)
+```
+
+```{r}
+test_results$bw <- predict(back_tune, cineTest_small)
+
+x = postResample(pred = test_results$bw,  obs = test_results$total_sales)
+
+results3 <- c("Backward", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results3)
+#print(results)
+```
+
+The backward model gives exactly the same results as the forward one, with the same error and R squared value.
+
+```{r}
+qplot(test_results$bw, test_results$total_sales) + 
+  labs(title="Backward Regression Observed VS Predicted", x="Predicted", y="Observed") +
+  lims(x = c(10, 15), y = c(10, 15)) +
+  geom_abline(intercept = 0, slope = 1, colour = "blue") +
+  theme_bw()
+```
+
+#### 5.1.3. Stepwise selection
+
+In stepwise selection, the process involves both forward and backward steps to iteratively add or remove variables from a model. We still use the model we created for forward selection.
+
+```{r}
+step_tune <- train(Model_forw, data = cineTrain_small, 
+                   method = "leapSeq", 
+                   preProc=c('scale', 'center'),
+                   tuneGrid = expand.grid(nvmax = 2:6),
+                   trControl = ctrl)
+plot(step_tune)
+
+# which variables are selected?
+coef(step_tune$finalModel, step_tune$bestTune$nvmax)
+
+test_results$seq <- predict(step_tune, cineTest_small)
+
+x = postResample(pred = test_results$seq,  obs = test_results$total_sales)
+
+results4 <- c("Stepwise", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results4)
+#print(results)
+
+qplot(test_results$seq, test_results$total_sales) + 
+  labs(title="Stepwise Regression Observed VS Predicted", x="Predicted", y="Observed") +
+  lims(x = c(10, 15), y = c(10, 15)) +
+  geom_abline(intercept = 0, slope = 1, colour = "blue") +
+  theme_bw()
+```
+
+The plot suggests us to only keep the first 3 parameters, as after that we will not reduce the RMSE. Selected variables are ticket_price, tickets_sold:ticket_use and occu_perc:capacity.
+
+The step-wise model gives exactly the same results as the forward and the backward ones, with the same error and R squared value.
+
+### 5.2. Regularization methods
+
+#### 5.2.1. Ridge
+
+It is a linear regression technique that introduces a penalty term to the linear regression cost function. The goal of ridge regression is to prevent over-fitting and improve the performance of the model, especially when there is multicollinearity among the predictor variables. The algorithm is extremely fast.
+
+```{r}
+# the grid for lambda
+ridge_grid <- expand.grid(lambda = seq(0, .1, length = 100))
+
+# train
+ridge_tune <- train(Model_forw, data = cineTrain_small,
+                    method='ridge',
+                    preProc=c('scale','center'),
+                    tuneGrid = ridge_grid,
+                    trControl=ctrl)
+plot(ridge_tune)
+
+# the best tune
+ridge_tune$bestTune
+
+# prediction
+test_results$ridge <- predict(ridge_tune, cineTest_small)
+
+x = postResample(pred = test_results$ridge,  obs = test_results$total_sales)
+
+results5 <- c("Ridge", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results5)
+#print(results)
+```
+
+Its results are very similar to the previous models, but this one is easier to use.
+
+#### 5.2.2. Lasso
+
+```{r}
+lasso_grid <- expand.grid(fraction = seq(.01, 1, length = 100))
+
+lasso_tune <- train(Model_forw, data = cineTrain_small,
+                    method='lasso',
+                    preProc=c('scale','center'),
+                    tuneGrid = lasso_grid,
+                    trControl=ctrl)
+plot(lasso_tune)
+
+lasso_tune$bestTune
+
+test_results$lasso <- predict(lasso_tune, cineTest_small)
+
+x = postResample(pred = test_results$lasso,  obs = test_results$total_sales)
+
+results6 <- c("Lasso", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results6)
+#print(results)
+```
+
+Results for the Lasso are also very similar to the previous ones.
+
+#### 5.2.3. Elastic Net
+
+The elastic net cost function is a linear combination of the L1 and L2 penalty terms, and it aims to achieve the benefits of variable selection (sparsity) from Lasso and the ability to handle correlated predictors from Ridge.
+
+Let's check the names for the hyper-parameters
+
+```{r}
+modelLookup('glmnet')
+```
+
+```{r}
+elastic_grid = expand.grid(alpha = seq(0, .2, 0.01), lambda = seq(0, .1, 0.01))
+
+glmnet_tune <- train(Model_forw, data = cineTrain_small,
+                     method='glmnet',
+                     preProc=c('scale','center'),
+                     tuneGrid = elastic_grid,
+                     trControl=ctrl)
+
+plot(glmnet_tune)
+glmnet_tune$bestTune
+
+test_results$glmnet <- predict(glmnet_tune, cineTest_small)
+
+x = postResample(pred = test_results$glmnet,  obs = test_results$total_sales)
+
+results7 <- c("Elastic Net", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results7)
+#print(results)
+```
+
+Results are more or less the same again, but the RSME is a little bit smaller.
+
+## 6. Machine Learning Tools
+
+### 6.1. KNN
+
+The algorithm makes predictions based on the average (for regression) of the k nearest neighbors in the feature space.
+
+Let's check the names for hyper-parameters
+
+```{r}
+modelLookup('kknn')
+# 3 hyper-parameters: kmax, distance, kernel
+# kmax: number of neighbors considered
+# distance: parameter of Minkowski distance (p in Lp)
+# kernel: "rectangular" (standard unweighted knn), "triangular", "epanechnikov" (or beta(2,2)), "biweight" (or beta(3,3)), "tri- weight" (or beta(4,4)), "cos", "inv", "gaussian", "rank" and "optimal".
+```
+
+Because ML models are non-linear, we can use simpler formulas
+
+```{r}
+knn_tune <- train(Model_forw, data = cineTrain_small,
+                  method = "kknn",   
+                  preProc=c('scale','center'),
+                  tuneGrid = data.frame(kmax=c(1,3,5,7,9,11),distance=2,kernel='optimal'),
+                  trControl = ctrl)
+plot(knn_tune)
+
+test_results$knn <- predict(knn_tune, cineTest_small)
+
+x = postResample(pred = test_results$knn,  obs = test_results$total_sales)
+
+results8 <- c("KNN", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results8)
+#print(results)
+```
+
+With KNN the RMSE is lower, but so it is the R squared value.
+
+### 6.2. Random Forests
+
+It builds multiple decision trees during training and merges their predictions to improve the overall performance and robustness of the model.
+
+```{r}
+rf_tune <- train(Model_forw, data = cineTrain_small,
+                 method = "rf",
+                 preProc=c('scale','center'),
+                 trControl = ctrl,
+                 ntree = 100,
+                 tuneGrid = data.frame(mtry=c(1,3,5,7)),
+                 importance = TRUE)
+
+plot(rf_tune)
+
+test_results$rf <- predict(rf_tune, cineTest_small)
+
+x = postResample(pred = test_results$rf,  obs = test_results$total_sales)
+
+results9 <- c("Random Forest", x[1], x[2], x[3])
+
+# Adding these results to the results table
+results <- rbind(results, results9)
+print(results)
+```
+
+R squared is better than the previous one, but not as good as for forward, backward, step-wise, ridge, lasso and elastic nets techniques. Also, the RMSE is smaller than in the just mentioned tools but bigger than in KNN.
+
+Finally, we will plot the importance of each variable: the most important one is tickets_sold:tickets_use, then occu_perc:capacity, then ticket_price. The variable month:quarter is the forth one and it could not be seen as important in the previous models (as the relationship was not linear).
+
+```{r}
+library(pdp)
+
+plot(varImp(rf_tune, scale = F), scales = list(y = list(cex = .95)))
+```
+
+Now, visualizing the partial dependence plots for the most important variable allows us to understand how this specific variable relates to the model's response (partial dependence).
+
+```{r}
+partial(rf_tune, pred.var = c("tickets_sold", "ticket_use"), plot = TRUE, rug = TRUE)
+
+```
+
+As both variables increase, the model's response tends to be higher. There is a positive interaction between the two variables.
+
+### 6.3. Gradient Boosting
+
+It builds a series of weak learners, typically decision trees, and combines their predictions to create a strong predictive model.
+
+```{r}
+
+#xgb_tune <- train(Model_forw, data = cineTrain_small,
+                 # method = "xgbTree",
+                  #preProc=c('scale','center'),
+                #  objective="reg:squarederror",
+               #   trControl = ctrl,
+#                   tuneGrid = expand.grid(nrounds = c(500,1000), max_depth = c(5,6,7), eta = c(0.01, 0.1, 1),
+#                   gamma = c(1, 2, 3), colsample_bytree = c(1, 2),
+#                   min_child_weight = c(1), subsample = c(0.2,0.5,0.8)),
+#                   verbosity=0)
+# 
+# test_results$xgb <- predict(xgb_tune, cineTest_small)
+# 
+# x = postResample(pred = test_results$xgb,  obs = test_results$total_sales)
+# 
+# results10 <- c("Gradient Boosting", x[1], x[2], x[3])
+# 
+# # Adding these results to the results table
+# results <- rbind(results, results10)
+# print(results)
+```
+
+Finally, we will plot the importance of each variable:
+
+```{r}
+# plot(varImp(xgb_tune, scale = F), scales = list(y = list(cex = .95)))
+```
+
+Now, visualizing the partial dependence plots for the most important variable allows us to understand how this specific variable relates to the model's response (partial dependence).
+
+```{r}
+# partial(rf_tune, pred.var = c("tickets_sold", "ticket_use"), plot = TRUE, rug = TRUE)
+```
+
+As both variables increase, the model's response tends to be higher. There is a positive interaction between the two variables.
+
+### 6.4 Neural Networks
+
+There is no point in implementing Neural Networks here, as:
+
+-   Deep neural networks are computationally intensive and demand substantial computing resources, including processing power and memory. For relatively simple problems, the computational cost of training a neural network may outweigh the potential benefits in terms of accuracy improvement.
+
+-   Predicting cinema sales relies on variables that do not need the hierarchical and non-linear learning capabilities of neural networks, such as day of the week and season, simpler models can be equally effective.
+
+-   They are thought for image and video predictions specially.
+
+Anyway, let's just see the results:
+
+```{r}
+# nn_tune <- train(Model_forw, data = cineTrain_small,
+#                  method = "neuralnet",
+#                  preProc=c('scale','center'),
+#                  trControl = ctrl,
+#                  tuneGrid = expand.grid(layer1 = c(4, 2),
+#                                         layer2 = c(2, 1, 0),
+#                                         layer3 = c(0)))
+# 
+# test_results$nn <- predict(nn_tune, cineTest_small)
+# 
+# x= postResample(pred = test_results$nn,  obs = test_results$price)
+# 
+# results11 <- c("Neural Networks", x[1], x[2], x[3])
+# 
+# # Adding these results to the results table
+# results <- rbind(results, results11)
+# print(results)
+```
+
+```{r}
+# plot(varImp(nn_tune, scale = F), scales = list(y = list(cex = .95)))
+# 
+# partial(nn_tune, pred.var = c("tickets_sold", "ticket_use"), plot = TRUE, rug = TRUE)
+```
+
+## 7. Prediction Intervals
+
+Finally, we will calculate the prediction intervals for:
+
+-   One statistical method: Backward selection
+
+-   One ML method: Random Forests
+
+### 7.1 Final predictions and intervals for backward
+
+```{r}
+yhat = exp(test_results$bw)
+
+head(yhat) # show the prediction for 6 films screened in a cinema
+
+hist(yhat, col="lightblue")
+
+prediction_inter <- predict(back_tune, cineTest_small, interval = "prediction") # Assuming prediction_inter contains the lower and upper prediction intervals
+
+lower_bound <- exp(prediction_inter[, "lwr"])
+upper_bound <- exp(prediction_inter[, "upr"])
+
+# Creating a data frame with predictions, lower, and upper bounds
+prediction_df <- data.frame(
+  yhat = exp(prediction_inter[, "fit"]),
+  lower = lower_bound,
+  upper = upper_bound
+)
+hist(prediction_df$yhat, col = "lightblue", main = "Histogram of Predictions")
+
+cineTest_small$Pred = exp(prediction_inter[, "fit"])
+cineTest_small$Real = y
+cineTest_small$Lower = exp(prediction_inter[, "lwr"])
+cineTest_small$Upper = exp(prediction_inter[, "upr"])  # Prediction Interval Plot
+
+cineTest_small %>% arrange(total_sales) %>% ggplot(aes(x = total_sales, y = y)) +   geom_point() +   geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +   labs(title = "Prediction Intervals", y = "Real Values") +   theme_minimal()  
+```
+
+### 7.2 Final predictions and intervals for random forests
+
+```{r}
+yhat = exp(test_results$rf)
+
+head(yhat) # show the prediction for 6 films screened in a cinema
+
+hist(yhat, col="lightblue")
+
+y = exp(test_results$total_sales)
+error = y-yhat
+hist(error, col="lightblue")
+
+#Because ML tools do not provide prediction intervals, we can split the testing set in two parts: one to measure the size of the noise, and the other one to compute the intervals from that size. Let's use the first 100 films in testing to compute the noise size
+
+noise = error[1:100]
+```
+
+Prediction intervals: let's fix a 90% confidence
+
+```{r}
+lwr = yhat[101:length(yhat)] + quantile(noise,0.05, na.rm=T)
+upr = yhat[101:length(yhat)] + quantile(noise,0.95, na.rm=T)
+```
+
+Performance using the last sales in yhat:
+
+```{r}
+predictions = data.frame(real=y[101:length(y)], fit=yhat[101:length(yhat)], lwr=lwr, upr=upr)
+
+predictions = predictions %>% mutate(out=factor(if_else(real<lwr | real>upr,1,0)))
+
+# how many real observations are out of the intervals?
+mean(predictions$out==1)
+```
+
+```{r}
+ggplot(predictions, aes(x=fit, y=real))+
+  geom_point(aes(color=out)) + theme(legend.position="none") +
+  xlim(20000, 1000000) + ylim(20000, 1000000)+
+  geom_ribbon(data=predictions,aes(ymin=lwr,ymax=upr),alpha=0.3) +
+  labs(title = "Prediction intervals", x = "prediction",y="real sales")
+
+```
