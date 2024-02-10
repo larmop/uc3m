@@ -224,7 +224,7 @@ The dataset we have chosen is that big that the function convert_count_tw cannot
 
 *Error: cannot allocate vector of size X Gb*
 
-As this assignment is not about applying techniques of dimensionality reduction, we will just choose the first 1% of the instances of both the train and the testing data of the dataset.
+As this assignment is not about applying techniques of dimensional reduction, we will just choose the first 1% of the instances of both the train and the testing data of the dataset.
 
 ```{r}
 # Define the percentage of instances to select
@@ -288,11 +288,95 @@ class(classifier)
 
 Report both in sample (training) results and out of sample (test) results.
 
+Let's start by calculating the in-sample (training) results.
+
+```{r}
+# Predictions on training data
+train_predictions <- predict(classifier, newdata=tw_dtm_train)
+
+# Confusion matrix for in-sample results
+confusion_train <- table(train_predictions, twTrain_small$category)
+confusion_train
+
+```
+
+Now, let's calculate the accuracy for the in-sample results:
+
+```{r}
+# Accuracy for in-sample results
+accuracy_train <- sum(diag(confusion_train)) / sum(confusion_train)
+accuracy_train
+```
+
+The accuracy in the train set is 91.3%.
+
+Now, let's move on to out-of-sample (test) results:
+
 ```{r}
 # Use the classifier to make the predictions
-predictions <- predict(classifier, newdata=tw_dtm_test)
-table(predictions, twTest_small$category)
+test_predictions <- predict(classifier, newdata=tw_dtm_test)
+
+# Confusion matrix for out-of-sample results
+confusion_test <- table(test_predictions, twTest_small$category)
+confusion_test
 ```
+
+Calculating the accuracy for the out-of-sample results:
+
+```{r}
+# Accuracy for out-of-sample results
+accuracy_test <- sum(diag(confusion_test)) / sum(confusion_test)
+accuracy_test
+
+```
+
+The accuracy in the test set is 66.3%.
+
+**In-sample (Training) Results:**
+
+-   The confusion matrix for in-sample predictions shows that the model performs well on the training data.
+
+-   The majority of negative (-1) and positive (1) sentiments are correctly classified, with high counts along the diagonal.
+
+-   There are some misclassifications, particularly in predicting neutral (0) sentiments, as indicated by the non-zero values outside the diagonal in the respective row and column.
+
+-   The overall accuracy on the training data is high, with an accuracy of approximately 91.33%.
+
+**Out-of-sample (Test) Results:**
+
+-   The confusion matrix for out-of-sample predictions indicates a less accurate performance compared to the training set.
+
+-   There are noticeable misclassifications across all sentiment categories, with higher counts of misclassifications in predicting negative (-1) and positive (1) sentiments.
+
+-   The accuracy on the test data is lower, approximately 66.26%, suggesting that the model's performance drops when applied to new, unseen data.
+
+**Conclusions:**
+
+1.  **Model Performance on Training Data:**
+
+    -   The model shows strong performance on the training data, achieving a high accuracy of approximately 91.33%.
+
+    -   The model effectively captures patterns present in the training set and can confidently predict sentiment labels.
+
+2.  **Generalization to Test Data:**
+
+    -   The model's performance drops when applied to the test data, indicating some difficulty in generalizing to new, unseen instances.
+
+    -   The lower accuracy on the test set (approximately 66.26%) suggests that the model may not generalize as well to real-world data.
+
+3.  **Areas for Improvement:**
+
+    -   The model seems to struggle with predicting neutral sentiments (0) in both training and test sets, as seen in the confusion matrices.
+
+    -   Further feature engineering or parameter tuning may be explored to enhance the model's ability to distinguish between sentiment categories.
+
+4.  **Consideration for Deployment:**
+
+    -   While the model performs well on the training data, its lower accuracy on the test set raises concerns about its real-world applicability.
+
+    -   Caution should be exercised when deploying the model in a production environment, and further improvements or adjustments may be necessary to enhance generalization.
+
+In summary, while the model demonstrates strong performance on the training data, there is room for improvement in its ability to generalize to new, unseen instances, particularly in correctly classifying neutral sentiments.
 
 ## 7. Applying Laplace smoothing (Bayesian naive Bayes)
 
