@@ -1,7 +1,30 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "Case Study: Naive Bayes application "
+author: "Lara Monteserín Placer"
+date: 'UC3M, 2023/24'
+output:
+  html_document: 
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_depth: 1
+  pdf_document:
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 1
+editor_options:
+  chunk_output_type: console
 ---
+
+```{r global_options, include=T, echo = F}
+knitr::opts_chunk$set(echo = T, warning=FALSE, message=FALSE)
+
+```
 
 # Assignment 1
 
@@ -25,7 +48,7 @@ Some of the advantages of being able to classify tweets depending on its sentime
 
 ![](foto.avif)
 
-In this case study, we will use a dataset with 162961 instances of tweets published during the year 2021.
+In this case study, we will use a dataset with 162961 instances of tweets published in India during the year 2021.
 
 ## 1. Introduction to the data
 
@@ -44,6 +67,8 @@ The dataset Twitter_Data.csv includes the following 2 variables:
     -   Negative: -1
 
 ```{r}
+#To not show warnings
+options(warn = -1)
 
 #Clear the system.
 rm(list=ls())
@@ -57,7 +82,7 @@ library(tidytext)
 library(tm)
 library(wordcloud)
 
-#setwd("C:/User/laram/Desktop/Todo/UC3M/Third Bimester/Bayesian Learning/Assignment 1")
+setwd("C:/Users/laram/Desktop/Todo/UC3M/Third Bimester/Bayesian Learning/Assignment 1")
 
 twitter <- read.csv("Twitter_Data.csv")
 
@@ -79,7 +104,9 @@ The 2 columns have null values, 7 in category and 4 in clean_text. As this value
 
 When first removing duplicates, we find out that there are just 2 duplicated values. Also, if we count the unique values in clean_text, there are only 162969, so these are the values that we keep to perform the statistical analysis.
 
-Finally, we turn the tweets into a corpus in order to work with them. From here, we will clean the corpus: put everything in lower case. remove any numbers and punctuation, take out uninformative stop words and remove excess white space.
+After that, we turn the tweets into a corpus in order to work with them. From here, we will clean the corpus: put everything in lower case. remove any numbers and punctuation, take out uninformative stop words and remove excess white space.
+
+Finally, we extract the indices (pos_indices, neu_indices and neg_indices) that point to the positions of rows where the category is considered positive, neutral or negative, respectively.
 
 ```{r}
 # Counting NAs and empty values in each column
@@ -157,33 +184,127 @@ It is always a good idea to separate from the beginning the training set (what t
 ```{r}
 # split between training and testing sets
 spl = createDataPartition(twitter$category, p = 0.8, list = FALSE)
+
 twTrain = twitter[spl,]
 twTest = twitter[-spl,]
 
-str(twTrain)
-summary(twTrain)
+corpus_train <- clean_corpus[spl]
+corpus_test <- clean_corpus[-spl]
+
+#str(twTrain)
+#summary(twTrain)
+
+
 ```
 
 ## 4. Use word clouds
 
--   To look at the different categories and explain any obvious differences between them
+We plot the three clouds corresponding to the 3 types of sentiment that can be extracted from the tweets, in order to look at the different categories and explain any obvious differences between them.
+
+As we are working with a huge number of instances, we need to establish a big number for the minimum frequency of the words to appear in the word cloud. This is the reason why we have chosen 1500 words as the minimum in all texts together.
+
+For all indices, "Modi" is the most repeated word by far, that is the surname of the Prime Minister of India.
+
+For the positive indices, some words stand out apart from "Modi", just like: "India", "best", "win", "love", "please" "power" or "thanks", "good", "great", "happy".
+
+For the neutral indices, the most repeated words are "congress", "bjp" (that is a political party in India), "vote", "minister", "nation" or "country", that are at the same time common with the positive and the negative indices in some cases.
+
+For the negative indices, the words that stand out the most are "poor", "hate", "people", "fake", "money" or "time".
 
 ```{r}
-wordcloud(clean_corpus[pos_indices], min.freq=40, scale=c(3,.5))
-wordcloud(clean_corpus[neu_indices], min.freq=40, scale=c(3,.5))
-wordcloud(clean_corpus[neg_indices], min.freq=40, scale=c(3,.5))
+par(mar=c(2,2,2,2))  # Set smaller margins
+wordcloud(clean_corpus[pos_indices], min.freq=1500, scale=c(3,.5))
+wordcloud(clean_corpus[neu_indices], min.freq=1500, scale=c(3,.5))
+wordcloud(clean_corpus[neg_indices], min.freq=1500, scale=c(3,.5))
+```
+
+## \* Something to point out
+
+The dataset we have chosen is that big that the function convert_count_tw cannot be applied to the train and the test sets because there is a problem:
+
+*Error: cannot allocate vector of size X Gb*
+
+As this assignment is not about applying techniques of dimensionality reduction, we will just choose the first 1% of the instances of both the train and the testing data of the dataset.
+
+```{r}
+# Define the percentage of instances to select
+percentage <- 0.01
+
+# Select the first 10% of instances for both train and test datasets
+twTrain_small = head(twTrain, round(nrow(twTrain) * percentage))
+twTest_small = head(twTest, round(nrow(twTest) * percentage))
+
+#corpus_train_small <- head(corpus_train, round(nrow(corpus_train) * percentage))
+corpus_train_small <- head(corpus_train, round(length(corpus_train) * percentage))
+
+#corpus_test_small <- head(corpus_test, round(nrow(corpus_test) * percentage))
+corpus_test_small <- head(corpus_test, round(length(corpus_test) * percentage))
+
 ```
 
 ## 5. Naive Bayes analysis
 
-to try to classify the data
+Now, we are ready to try to classify the data by performing a Naive Bayes analysis.
+
+```{r}
+# Turn corpuses into matrices of 0/1 for absence or presence of words.
+tw_dtm <- DocumentTermMatrix(clean_corpus)
+inspect(tw_dtm[2:10, 50:70])  # Inspect some rows and columns
+
+tw_dtm_train <- tw_dtm[spl,]
+tw_dtm_test <- tw_dtm[-spl,]
+
+# Look at words which appear at least five times in the training data set for Twitter
+five_times_words_tw <- findFreqTerms(tw_dtm_train, 5)
+length(five_times_words_tw)
+five_times_words_tw[1:5]
+
+# Create Document-Term Matrices using the selected words for Twitter
+tw_dtm_train <- DocumentTermMatrix(corpus_train_small,
+                                   control=list(dictionary=five_times_words_tw))
+
+tw_dtm_test <- DocumentTermMatrix(corpus_test_small,
+                                  control=list(dictionary=five_times_words_tw))
+
+# Convert 0 and 1 to "No" and "Yes"
+convert_count_tw <- function(x){
+  y <- ifelse(x > 0, 1, 0)
+  y <- factor(y, levels=c(0, 1), labels=c("No", "Yes"))
+  y
+}
+
+tw_dtm_train <- apply(tw_dtm_train, 2, convert_count_tw)
+tw_dtm_train[1:4, 30:35]
+
+tw_dtm_test <- apply(tw_dtm_test, 2, convert_count_tw)
+tw_dtm_test[2:10, 50:70]
+
+# Train the classifier
+classifier <- naiveBayes(tw_dtm_train, twTrain_small$category)
+class(classifier)
+```
 
 ## 6. Results
 
 Report both in sample (training) results and out of sample (test) results.
 
+```{r}
+# Use the classifier to make the predictions
+predictions <- predict(classifier, newdata=tw_dtm_test)
+table(predictions, twTest_small$category)
+```
+
 ## 7. Applying Laplace smoothing (Bayesian naive Bayes)
 
 -   See if results improve
+
+```{r}
+# Use the classifier with Laplace smoothing.
+
+B.clas <- naiveBayes(tw_dtm_train, twTrain_small$category,laplace = 1)
+class(B.clas)
+B.preds <- predict(B.clas, newdata=tw_dtm_test)
+table(B.preds, twTest_small$category)
+```
 
 ## 8. Conclusions and possible improvements
