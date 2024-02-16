@@ -84,6 +84,10 @@ library(wordcloud)
 
 setwd("C:/Users/laram/Desktop/Todo/UC3M/Third Bimester/Bayesian Learning/Assignment 1")
 
+
+#For the explanations of the results to be consistent always
+set.seed(123)
+
 twitter <- read.csv("Twitter_Data.csv")
 
 # Display column names in the dataset
@@ -234,10 +238,8 @@ percentage <- 0.01
 twTrain_small = head(twTrain, round(nrow(twTrain) * percentage))
 twTest_small = head(twTest, round(nrow(twTest) * percentage))
 
-#corpus_train_small <- head(corpus_train, round(nrow(corpus_train) * percentage))
 corpus_train_small <- head(corpus_train, round(length(corpus_train) * percentage))
 
-#corpus_test_small <- head(corpus_test, round(nrow(corpus_test) * percentage))
 corpus_test_small <- head(corpus_test, round(length(corpus_test) * percentage))
 
 ```
@@ -286,7 +288,9 @@ class(classifier)
 
 ## 6. Results
 
-Report both in sample (training) results and out of sample (test) results.
+In this section, we will report both in sample (training) results and out of sample (test) results.
+
+### 6.1 Training results
 
 Let's start by calculating the in-sample (training) results.
 
@@ -308,7 +312,17 @@ accuracy_train <- sum(diag(confusion_train)) / sum(confusion_train)
 accuracy_train
 ```
 
-The accuracy in the train set is 91.3%.
+The accuracy in the train set is 91.95%.
+
+#### Conclusions
+
+-   The confusion matrix for in-sample predictions shows that the model performs well on the training data.
+
+-   The majority of negative (-1) and positive (1) sentiments are correctly classified, with high counts along the diagonal. There are some misclassifications, particularly in predicting neutral (0) sentiments, as indicated by the non-zero values outside the diagonal in the respective row and column.
+
+-   The overall accuracy on the training data is high, with an accuracy of approximately 91.95%.
+
+### 6.2 Test results
 
 Now, let's move on to out-of-sample (test) results:
 
@@ -330,65 +344,139 @@ accuracy_test
 
 ```
 
-The accuracy in the test set is 66.3%.
+The accuracy in the test set is 64.72%.
 
-**In-sample (Training) Results:**
-
--   The confusion matrix for in-sample predictions shows that the model performs well on the training data.
-
--   The majority of negative (-1) and positive (1) sentiments are correctly classified, with high counts along the diagonal.
-
--   There are some misclassifications, particularly in predicting neutral (0) sentiments, as indicated by the non-zero values outside the diagonal in the respective row and column.
-
--   The overall accuracy on the training data is high, with an accuracy of approximately 91.33%.
-
-**Out-of-sample (Test) Results:**
+#### Conclusions
 
 -   The confusion matrix for out-of-sample predictions indicates a less accurate performance compared to the training set.
 
 -   There are noticeable misclassifications across all sentiment categories, with higher counts of misclassifications in predicting negative (-1) and positive (1) sentiments.
 
--   The accuracy on the test data is lower, approximately 66.26%, suggesting that the model's performance drops when applied to new, unseen data.
+-   The accuracy on the test data is lower, approximately 64.72%, suggesting that the model's performance drops when applied to new, unseen data. We will analyse this in the final conclusions (8th step).
 
-**Conclusions:**
+### 6.3 Overall results
 
-1.  **Model Performance on Training Data:**
+The model shows strong performance on the training data, achieving a high accuracy of approximately 91.94%. The model effectively captures patterns present in the training set and can confidently predict sentiment labels.
 
-    -   The model shows strong performance on the training data, achieving a high accuracy of approximately 91.33%.
+The model's performance drops when applied to the test data, indicating some difficulty in generalizing to new, unseen instances. The lower accuracy on the test set (approximately 64.72%) suggests that the model may not generalize as well to real-world data.
 
-    -   The model effectively captures patterns present in the training set and can confidently predict sentiment labels.
+**Areas for Improvement:**
 
-2.  **Generalization to Test Data:**
-
-    -   The model's performance drops when applied to the test data, indicating some difficulty in generalizing to new, unseen instances.
-
-    -   The lower accuracy on the test set (approximately 66.26%) suggests that the model may not generalize as well to real-world data.
-
-3.  **Areas for Improvement:**
-
-    -   The model seems to struggle with predicting neutral sentiments (0) in both training and test sets, as seen in the confusion matrices.
-
-    -   Further feature engineering or parameter tuning may be explored to enhance the model's ability to distinguish between sentiment categories.
-
-4.  **Consideration for Deployment:**
-
-    -   While the model performs well on the training data, its lower accuracy on the test set raises concerns about its real-world applicability.
-
-    -   Caution should be exercised when deploying the model in a production environment, and further improvements or adjustments may be necessary to enhance generalization.
-
-In summary, while the model demonstrates strong performance on the training data, there is room for improvement in its ability to generalize to new, unseen instances, particularly in correctly classifying neutral sentiments.
+The model seems to struggle with predicting neutral sentiments (0) in both training and test sets, as seen in the confusion matrices. While the model performs well on the training data, its lower accuracy on the test set raises concerns about its real-world applicability.
 
 ## 7. Applying Laplace smoothing (Bayesian naive Bayes)
 
--   See if results improve
+Next, we will apply Laplace Smoothing in order to see if results improve. This helps address the issue of zero probabilities for unseen features in the Naive Bayes model, improving its generalization performance.
 
 ```{r}
 # Use the classifier with Laplace smoothing.
-
 B.clas <- naiveBayes(tw_dtm_train, twTrain_small$category,laplace = 1)
 class(B.clas)
 B.preds <- predict(B.clas, newdata=tw_dtm_test)
-table(B.preds, twTest_small$category)
+confusion_laplacian <- table(B.preds, twTest_small$category)
 ```
 
+```{r}
+# Accuracy for out-of-sample results
+accuracy_laplacian <- sum(diag(confusion_laplacian)) / sum(confusion_laplacian)
+accuracy_laplacian
+```
+
+If we set the parameter *laplace = 1,* it seems like the model is not making any predictions for the neutral class (category 0) neither for positive class (1), resulting in all zero counts for those categories. However, we have noticed that the closer to zero we set the parameter, the better confusion matrix we achieve (and the better accuracy). We have created a loop to illustrate it:
+
+```{r}
+laplace_values <- c(0.5, 0.25, 0.1)
+
+for (laplace_val in laplace_values) {
+  B.clas <- naiveBayes(tw_dtm_train, twTrain_small$category, laplace = laplace_val)
+  cat("Laplace Value:", laplace_val, "\n")
+
+  # Predictions on the test data
+  B.preds <- predict(B.clas, newdata = tw_dtm_test)
+  
+  # Confusion matrix for out-of-sample results
+  confusion_laplacian <- table(B.preds, twTest_small$category)
+  
+  # Accuracy for out-of-sample results
+  accuracy_laplacian <- sum(diag(confusion_laplacian)) / sum(confusion_laplacian)
+  
+  cat("Accuracy:", accuracy_laplacian, "\n\n")
+}
+
+```
+
+In any case, results are much worse than with no Laplacian Smoothing application, so in the next and final section we will discuss about these results.
+
 ## 8. Conclusions and possible improvements
+
+As we are not satisfied with the results, let's try to see the word clouds we represented before but divided in train and test for every class. This way, we will have a clue about whether the test set is representative.
+
+```{r}
+# Indices para cada clase en los conjuntos de entrenamiento y prueba
+pos_indices_train <- which(twTrain$category == 1)
+pos_indices_test <- which(twTest$category == 1)
+
+neu_indices_train <- which(twTrain$category == 0)
+neu_indices_test <- which(twTest$category == 0)
+
+neg_indices_train <- which(twTrain$category == -1)
+neg_indices_test <- which(twTest$category == -1)
+```
+
+```{r}
+corpus_train_pos <- clean_corpus[pos_indices_train]
+corpus_test_pos <- clean_corpus[pos_indices_test]
+
+corpus_train_neu <- clean_corpus[neu_indices_train]
+corpus_test_neu <- clean_corpus[neu_indices_test]
+
+corpus_train_neg <- clean_corpus[neg_indices_train]
+corpus_test_neg <- clean_corpus[neg_indices_test]
+```
+
+```{r}
+par(mfrow=c(3,2))
+
+# Wordcloud for the positive class
+wordcloud(corpus_train_pos, min.freq=1500, scale=c(3,.5), main="Train - Positive")
+wordcloud(corpus_test_pos, min.freq=1500, scale=c(3,.5), main="Test - Positive")
+
+# Wordcloud for the neutral class
+wordcloud(corpus_train_neu, min.freq=1500, scale=c(3,.5), main="Train - Neutral")
+wordcloud(corpus_test_neu, min.freq=1500, scale=c(3,.5), main="Test - Neutral")
+
+# Wordcloud for the negative class
+wordcloud(corpus_train_neg, min.freq=1500, scale=c(3,.5), main="Train - Negative")
+wordcloud(corpus_test_neg, min.freq=1500, scale=c(3,.5), main="Test - Negative")
+
+```
+
+### 8.1 Final conclusions
+
+In view of these new word clouds, we can confirm the previous hypothesis. By far the most repeated word in the dataset is "modi", followed by "india" and "will". When splitting into training and test, as only 20% of the data is destined to test, it makes sense that the cloud of most repeated words is reduced to only those that were the 2 or 3 most repeated words in the training, i.e. the ones mentioned above.
+
+As none of these words can be clearly classified into any class, as they do not necessarily represent a negative, neutral or positive sentiment, it is much more difficult for the classifier to divide the tweets into the appropriate classes, and therefore we see a large drop in the accuracy value in the test compared to the training.
+
+Before placing a random seed at the start of the code, we ran the code several times to see if we could get better results by randomly splitting the training and test sets, but the accuracy values varied by less than 2% in all cases. However we split the data, the test set will always be smaller and the most repeated words will be by far the most repeated words in the whole dataset.
+
+Finally and in relation to results obtained when applying Laplacian Smoothing, we have come to some conclusions that justify why it might not be the most appropriate for our data:
+
+-   **Frequency-based features:** Laplace smoothing is often beneficial when dealing with sparse data or features with low frequencies. In our case, where the most repeated words are "modi," "india," and "will," these high-frequency words may not benefit significantly from Laplace smoothing. The addition of a small constant may not impact their probabilities much.
+
+-   **Dominance of the "top" words:** The dominance of a few highly frequent words ("modi," "india," and "will") may lead to a situation where the majority of the information for classification comes from a small set of words. Laplace smoothing might not contribute significantly in such cases, and the classifier could be heavily influenced by the most frequent words, potentially leading to over-fitting.
+
+-   **Neutral words:** Words like "modi," "india," and "will" may not carry clear sentiment polarity. Naive Bayes assumes feature independence, and if the dominant words are neutral and present in tweets across different sentiment classes, Laplace smoothing might not effectively handle the challenge of distinguishing between classes. This is probably the key reason for the behaviour we have identified.
+
+### 8.3 Possible improvements
+
+Looking at the results, these are some ways that could improve the performance of our classifier and give better results:
+
+1.  **Feature Engineering:** We could look beyond just individual words and check out other features. Some options would be looking at pairs of words (bigrams), sets of three (trigrams), or even more complicated language patterns. This way we could capture a fuller picture of the context and structure in the text. This makes sense as some sentiments might be expressed more clearly in phrases rather than individual words.
+
+2.  **Custom Stopword List:** A different option would be to reevaluate and customize our stopword list. Words like "modi" ,"india" and "will", that are common across all classes, could be excluded from analysis or treated differently.
+
+3.  **Dictionaries:** It could be interesting to include dictionaries that associate words with sentiment scores. It could provide additional information about the sentiment of individual words beyond frequency counts.
+
+4.  **Ensemble Methods:** Considering more advanced techniques or exploring other machine learning algorithms might be beneficial for improving the model's performance on sentiment classification For example, ensemble methods such as Random Forest or Gradient Boosting seem to be good options, as they often improve predictive performance by combining the strengths of multiple models. Also, when using these methods, we could apply hyperparameter tuning.
+
+5.  **Domain-Specific Preprocessing:** Considering domain-specific preprocessing techniques could be a good idea as our dataset is formed by tweets. This way, we can hadle differently hashtags, mentions, and emojis in a way that they all preserve their meaning.
