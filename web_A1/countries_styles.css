@@ -1,0 +1,81 @@
+nav.miembros{
+    text-align: center;
+    font-size: 0;
+}
+
+nav.miembros li a {
+    color:white;
+}
+
+nav.miembros li {
+    color:white;
+}
+
+nav.miembros li.anterior {
+    border-radius: 0px;
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+    display: inline-block;
+    background-color: purple;
+    padding: 10px;
+    font-size: 13pt;
+}
+
+nav.miembros li.siguiente {
+    border-radius: 0px;
+    border-top-right-radius: 20px;
+    border-bottom-right-radius: 20px;
+    display: inline-block;
+    background-color: purple;
+    padding: 10px;
+    font-size: 13pt;
+}
+
+nav.miembros li.home{
+    border-radius: 0px;
+    display: inline-block;
+    background-color: purple;
+    padding: 10px;
+    font-size: 13pt;
+}
+
+nav.miembros li.anterior_sin_enlace{
+    border-radius: 0px;
+    border-top-left-radius: 20px;
+    border-bottom-left-radius: 20px;
+    display: inline-block;
+    background-color: purple;
+    padding: 10px;
+    font-size: 13pt;
+}
+
+nav.miembros li.siguiente_sin_enlace {
+    border-radius: 0px;
+    border-top-right-radius: 20px;
+    border-bottom-right-radius: 20px;
+    display: inline-block;
+    background-color: purple;
+    padding: 10px;
+    font-size: 13pt;
+}
+
+nav.miembros li.anterior:hover {
+    background-color: orange;
+}
+
+nav.miembros li.siguiente:hover {
+    background-color: orange;
+}
+
+nav.miembros li.home:hover {
+    background-color: orange;
+}
+
+h1,h2{
+    text-align:center;
+    font-family:verdana;
+}
+
+body>section>article>p, body>section>article>ul>li, body>header>h3{
+    font-family: verdana;
+}

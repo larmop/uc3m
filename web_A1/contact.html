@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+
+<html lang=”es” style="font-size: 14pt">
+
+    <head>
+
+        <meta charset=”UTF-8” >
+        <title>Main site</title>
+        <link rel ="stylesheet" href="contact_styles.css" type="text/css">
+        <link rel ="stylesheet" href="general_styles.css" type="text/css">
+        
+    </head>
+
+    <body>
+
+        <h2>Contact our chefs</h2>
+        <nav class="pag_principal"> 
+            <ul>
+              <li class="elemento"><a href="index.html" style= "text-decoration:none">Main site</a></li>
+            </ul>
+          </nav>
+        <form name='fcontacto' method='post' action='mailto:100514164@alumno.uc3m.es' enctype="text/plain">
+           
+            <fieldset>
+                <legend>Your data</legend>
+                <br>
+                <div>
+                <label class="pregunta" for='un_nombre'>What is your name?</label> 
+                <input class="texto" type='text' id='un_nombre' name='un_nombre' placeholder='Introduce your name' size='60' autofocus>
+                </div>
+                <br>
+                <div>
+                <label class='pregunta' for='correoe'>What is your email?</label> 
+                <input class="texto" type='text' id='correoe' name='correoe' placeholder='Write your email' size='60' required autofocus>    
+                </div>  
+                <br>        
+            </fieldset>
+
+            <fieldset>
+                <legend>Contact us</legend>
+                <legend>Rate our Culinary Experience</legend>
+                <ol>
+                    <li class="pregunta">Overall satisfaction with our culinary offerings: <br>
+                        <label class="entrada"><input type='checkbox' name='satisfaction' id='excellent' value='vexcellent' checked>Love the variety of dishes</label><br>
+                        <label class="entrada"><input type='checkbox' name='satisfaction' id='good' value='vgood'>Could use more diverse culinary options</label><br>
+                        <label class="entrada"><input type='checkbox' name='satisfaction' id='average' value='vaverage'>Satisfied with the current culinary selection</label><br>
+                        <label class="entrada"><input type='checkbox' name='satisfaction' id='poor' value='vpoor'>Didn't find dishes that interested me</label><br>
+                    </li>
+                    <br>
+                    <li class="pregunta">On a scale of 1 (not enjoyable) to 10 (absolutely delightful), how would you rate our culinary experience:
+                        <input type='number' name='culinaryRating' id='culinaryRating' min='1' max='10' step='1' value='8'>
+                    </li>
+                    <br>
+                    <li class="pregunta">What aspect of our culinary offerings impressed you the most? <br>
+                        <label class="entrada"><input type='radio' name='impression' id='flavors' value='vflavors'>The diverse and rich flavors</label><br>
+                        <label class="entrada"><input type='radio' name='impression' id='presentation' value='vpresentation'>The presentation and visual appeal</label><br>
+                        <label class="entrada"><input type='radio' name='impression' id='innovation' value='vinnovation'>The innovative culinary creations</label><br>
+                        <label class="entrada"><input type='radio' name='impression' id='variety' value='vvariety'>The variety of cuisines offered</label><br>
+                    </li>
+                </ol>
+
+
+
+            </fieldset>
+
+            <fieldset>
+                <legend>Include a recommendation</legend>
+                <br>
+                <label class="pregunta">Write freely your comments about the website:</label>
+                <br>
+                <textarea class="area_texto" name='comentarios' rows='10' cols='55'></textarea>
+                <br>
+                <br>
+            </fieldset>
+
+            <input type='submit' value='Send'> <!-- Send answers to Lara's email -->
+            <input type='reset' value='Erase all'>
+            <button type='button' id='vxDefecto'>Fill with default values</button>
+
+        </form>
+
+    </body>
+
+</html>

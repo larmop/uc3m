@@ -1,0 +1,60 @@
+body > h1, body > h2 {
+    font-family: geneva; 
+    text-align: center;
+}
+
+body>nav>ul>li, body>article>section>div>nav>h3, body>article>section>div>nav>ul>li, body>article>section>p, body>article>section>ol>li, body>h3, body>p  {
+    font-family: verdana;
+}
+
+.miembros {
+    text-align: center;
+    font-size: 0;
+}
+
+.miembros .elemento {
+    display: inline-block;
+    background-color: purple;
+    color : white;
+    padding: 10px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    font-size: 13pt;
+}
+
+.miembros .elemento a {
+    color: white
+}
+
+.miembros .elemento:hover {
+    background-color: orange;
+}
+
+.navega_lat .procedimientos {
+    font-size: 70%;
+    float:right;
+    background-color: goldenrod;
+    margin: 5px;
+    margin-left: 15px;
+    padding: 5px;
+    border-left: #EEE thick solid;
+    position: fixed;
+    right: 0;   
+}
+
+.navega_lat .procedimientos li {
+    background-color: #FFFF00;
+    margin: 5px;
+    padding: 5px;
+    border-radius: 10px;
+    list-style-type: square;
+}
+
+body > footer {
+    clear: both;
+}
+
+.separar {
+    margin-right: 250px;
+}
+

@@ -1,0 +1,51 @@
+.tabla {
+    text-align:center;
+    margin:auto;
+    width:80%;
+    border-style:solid;
+    border-color:black;
+}
+
+.tabla thead, .tabla th,.tabla tbody, .tabla td {
+    border-width: 1 px;
+    border-style: solid;
+    border-color:black;
+    padding: 15px;
+}
+
+.tabla thead{
+    background-color: peru;
+}
+
+.tabla tbody{
+    background-color: burlywood;
+    font-size:80%;
+}
+
+.pag_principal {
+    text-align: center;
+    font-size: 0;
+}
+
+.pag_principal .elemento {
+    display: inline-block;
+    background-color: purple;
+    color : white;
+    padding: 10px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    font-size: 13pt;
+    font-family:verdana;
+}
+
+.pag_principal .elemento a{
+    color: white
+}
+
+.pag_principal .elemento:hover {
+    background-color: orange;
+}
+
+body>section>p, body>section>ol>li, body>div>p {
+    font-family: verdana;
+}

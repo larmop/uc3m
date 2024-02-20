@@ -1,0 +1,92 @@
+<html>
+    <head>
+        <title>Budget form</title>
+        <style>
+            body{
+                font-family: verdana;
+            }   
+            #texto{
+                background-color: yellow;
+            }
+            #naranja{
+                color:orange;
+                font-size: 8pt;
+            }
+            .pag_principal {
+                text-align: center;
+                font-size: 0;
+            }
+            .pag_principal .elemento {
+                display: inline-block;
+                background-color: purple;
+                color : white;
+                padding: 10px;
+                border-top-left-radius: 5px;
+                border-top-right-radius: 5px;
+                font-size: 13pt;
+            }
+            .pag_principal .elemento a{
+                color: white
+            }
+            .pag_principal .elemento:hover {
+                background-color: orange;
+            }
+        </style>
+        <script>
+            function calcularprecio(){
+                var tusuario, tweb, x, precio;
+                if (document.getElementById("tipo_empresa").value=="business"){
+                    tusuario=10;
+                    }
+                if (document.getElementById("tipo_empresa").value=="private individual"){
+                    tusuario=2;
+                    }
+                if (document.getElementById("tipo_web").value=="Basic"){
+                    tweb=5;
+                    }
+                if (document.getElementById("tipo_web").value=="Interactive"){
+                    tweb=20;
+                    }
+                var tamano=document.getElementById("npags").value;
+                x=tusuario*tweb;
+                precio=x*tamano;
+                var texto_salida="Budget for your " + document.getElementById("tipo_web").value + " food website of " + document.getElementById("tipo_empresa").value + " and with " + document.getElementById("npags").value + " pages is " + precio + " euros.";
+                window.alert(texto_salida);
+                document.getElementById("naranja").innerHTML=texto_salida;
+                document.getElementById("texto").value=precio;
+            }       
+        </script>
+    </head>
+    <body>
+        <nav class="pag_principal"> 
+            <ul>
+              <li class= "elemento"><a href="index.html" style= "text-decoration:none">Index page</a></li>
+            </ul>
+        </nav>
+        <h4>Do you want us to give you a budget for us to create your food website?</h4>
+        <form id="fprecio" action="" method="post">
+            <label>Type of business:</label>
+            <select id="tipo_empresa">
+                <option value="business">Business</option>
+                <option value="private individual">Private Individual</option>
+            </select>
+            <br>
+            <label>Type of website:</label>
+            <select id="tipo_web">
+                <option value="Basic">Basic - Static</option>
+                <option value="Interactive">Dynamic - Interactive</option>
+            </select>
+            <br>
+            <label>Number of pages of the web:</label>
+            <input type='number' id="npags" min='1' max='100' step='1' value="2">
+            <br>
+            <br>
+            <button type='button' value="Calculate" onclick="calcularprecio()">Calculate</button>
+            <br>
+            <br>
+            <label>Your budget calculated here:</label>
+            <input id="texto" type='text'>
+            <p id="naranja"></p>
+        </form>
+    </body>
+</html>

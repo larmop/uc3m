@@ -1,0 +1,46 @@
+.texto, .area_texto{
+    width:100%;
+    padding-top: 12px;
+    padding-right: 20px;
+    margin-top: 8px;
+    background-color: yellow;
+    box-sizing: border-box;
+}
+
+body>form>fieldset>legend{
+    font-family: "verdana";
+}
+
+.entrada{
+    font-family: "verdana";
+    font-size: 50%;
+}
+
+.pregunta {
+    font-family:"verdana";
+    font-size:80%;
+}
+
+.pag_principal {
+    text-align: center;
+    font-size: 0;
+}
+
+.pag_principal .elemento {
+    display: inline-block;
+    background-color: purple;
+    color : white;
+    padding: 10px;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    font-size: 13pt;
+    font-family:verdana;
+}
+
+.pag_principal .elemento a{
+    color: white
+}
+
+.pag_principal .elemento:hover {
+    background-color: orange;
+}
