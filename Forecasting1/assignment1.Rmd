@@ -1,0 +1,166 @@
+---
+title: "Case Study: ARIMA models "
+author: "Lara Monteserín Placer"
+date: 'UC3M, 2023/24'
+output:
+  html_document: 
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_depth: 1
+  pdf_document:
+    css: my-theme.css
+    theme: cerulean
+    highlight: tango
+    number_sections: yes
+    toc: yes
+    toc_depth: 1
+editor_options:
+  chunk_output_type: console
+---
+
+```{r global_options, include=T, echo = F}
+knitr::opts_chunk$set(echo = T, warning=FALSE, message=FALSE)
+
+```
+
+# HMW 1
+
+### Lara Monteserín Placer
+
+## 1. Introduction
+
+On any given day, websites attract a diverse audience, with numerous visitors engaging with content. Comprehending the factors that influence total visits is essential. In this study, we aim to predict the total number of visits to a specific website by looking for patterns in the data based on the time period over which they have been recorded.
+
+Some of the advantages of predicting future visits are:
+
+-   **Web traffic influences everything:** Visits serve as a fundamental metric, helping to shape the website's content strategy.
+
+-   **Resource allocation for growth:** Allows website administrators to allocate resources efficiently, ensuring optimal performance.
+
+-   **Strategic planning in the digital realm:** By anticipating future visits, website managers can refine user experience, content development and targeted advertising strategies to align with anticipated traffic trends.
+
+![](foto.jpeg){width="565"}
+
+In this case study, we will use a data set with 2167 instances of website visits in cinemas from 2014 to 2020.
+
+We took the dataset from Kaggle: <https://www.kaggle.com/datasets/bobnau/daily-website-visitors/>
+
+### 1.1 The dataset: Description of features
+
+The dataset daily-website-visitors.csv includes the following 8 variables:
+
+1.  **film_code**: A unique identifier for each film in the dataset.
+
+2.  **cinema_code**: A unique code assigned to each cinema in the dataset.
+
+3.  **total_sales**: The total revenue generated from ticket sales for a specific film and cinema.
+
+4.  **tickets_sold**: The total number of tickets sold for a particular film and cinema.
+
+5.  **tickets_out**: The number of tickets that were distributed or printed for a specific film and cinema.
+
+<!-- -->
+
+1.  **Row**: A unique identifier for each row in the dataset.
+2.  **Day**: The day of the week represented in text form (e.g., Sunday, Monday).
+3.  **Day.Of.Week**: The day of the week represented in numeric form (1-7).
+4.  **Date**: The date in mm/dd/yyyy format.
+5.  **Page.Loads**: The daily count of pages loaded on the website.
+6.  **Unique.Visits**: The daily count of visitors whose IP addresses haven't been associated with any page hits for over 6 hours, indicating unique visits.
+7.  **First.Time.Visits**: The count of unique visitors who do not have a cookie identifying them as previous customers, representing the number of first-time visitors.
+8.  **Returning.Visits**: The count of unique visitors, excluding first-time visitors, indicating the number of visitors returning to the website.
+
+### 1.2 The goal
+
+Make two different predictions, both based on the column with spatio-temporal information (*Date*), looking for possible trends and seasonalities in the data.
+
+We will predict the Unique.Visits feature, which represents the unique visits to a web page, and on the other hand the Returning.Visits feature, which represents the visits of those users who have already visited the site.
+
+This way, we will try to forecast how both sequences of observations will continue into the future.
+
+```{r}
+library(fpp3) #attach several packages as tidyverse, lubridate, etc. 
+library(tidyquant)
+
+
+setwd("C:/Users/laram/Desktop/Todo/UC3M/Third Bimester/Forecasting/Assignment1")
+website <- read.csv("daily-website-visitors.csv")
+
+# Display column names in the dataset
+colnames(website)
+
+#dim(website)
+#str(website)
+#summary(website)
+```
+
+## 2. Data Preparation/Pre-processing
+
+### 2.1 Selecting relevant columns
+
+As this is a time-series analysis, we only need the two targets we are going to predict and the column with the time values. For that reason, we will remove all columns except of "Unique.Visits", "Returning.Visits" and "Date".
+
+```{r}
+#Delete those columns
+cols_to_remove <- c("Day", "Day.Of.Week", "Page.Loads", "First.Time.Visits", "Row")
+
+website <- website[, !(names(website) %in% cols_to_remove)]
+```
+
+### 2.1 Data cleaning (NAs, normalization and looking for outliers)
+
+We want to ensure that we are working with a reliable and accurate dataset.
+
+Until now, we have 2167 instances.
+
+As it has been shown below, there are not any null values in the dataset.
+
+We also normalize the names of the columns so that they easier to work with.
+
+When removing duplicates, we find out that there are no duplicates in the dataset.
+
+```{r}
+# Counting NAs and empty values in each column
+na_counts <- colSums(is.na(website) | website == "")
+na_counts <- na_counts[order(-na_counts)]
+#print(na_counts)
+
+#Data types
+glimpse(website)
+
+#Data transformation to ensure that there are not any leading and trailing whitespaces from all character columns in the dataframe
+library(stringr)
+website <- website %>% mutate_all(str_trim)
+
+#Standardizing and cleaning column names. Useful for ensuring that column names are consistent and easy to work with.
+library(janitor)
+website <- website%>% clean_names() 
+
+#Creates a logical vector duplicate_rows indicating whether each row in the data frame is a duplicate of a previous row
+duplicate_rows <- website %>% duplicated.data.frame()
+
+#Retains only the unique rows
+library(dplyr)
+website <- website %>% distinct(date, .keep_all = TRUE)
+
+#Number of rows after removing duplicates
+n_rows <- nrow(website)
+print(n_rows)
+```
+
+### 2.2 
+
+## 3. Data visualization (trends and seasonality).
+
+In this section we will look for time-series patterns: trends, cycles, seasonality and volatility
+
+Trends: long-term increase or decrease
+
+Cycles: rises and falls that are not of a fixed period (a pattern that cannot be predicted)
+
+Seasonality: deterministic pattern (fixed and known length) from a season (every monday, for example \--\> a pattern that can be predicted)
+
+Volatility: size of noise
