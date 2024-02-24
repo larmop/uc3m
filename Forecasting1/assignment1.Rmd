@@ -44,25 +44,13 @@ Some of the advantages of predicting future visits are:
 
 ![](foto.jpeg){width="565"}
 
-In this case study, we will use a data set with 2167 instances of website visits in cinemas from 2014 to 2020.
+In this case study, we will use a data set with 2167 instances of website visits in cinemas from 2014 to 2020. This file contains 5 years of daily time series data for various traffic measures on a statistical forecasting website.
 
 We took the dataset from Kaggle: <https://www.kaggle.com/datasets/bobnau/daily-website-visitors/>
 
 ### 1.1 The dataset: Description of features
 
 The dataset daily-website-visitors.csv includes the following 8 variables:
-
-1.  **film_code**: A unique identifier for each film in the dataset.
-
-2.  **cinema_code**: A unique code assigned to each cinema in the dataset.
-
-3.  **total_sales**: The total revenue generated from ticket sales for a specific film and cinema.
-
-4.  **tickets_sold**: The total number of tickets sold for a particular film and cinema.
-
-5.  **tickets_out**: The number of tickets that were distributed or printed for a specific film and cinema.
-
-<!-- -->
 
 1.  **Row**: A unique identifier for each row in the dataset.
 2.  **Day**: The day of the week represented in text form (e.g., Sunday, Monday).
@@ -75,7 +63,7 @@ The dataset daily-website-visitors.csv includes the following 8 variables:
 
 ### 1.2 The goal
 
-Make two different predictions, both based on the column with spatio-temporal information (*Date*), looking for possible trends and seasonalities in the data.
+Make two different predictions, both based on the column with spatio-temporal information (*Date*), looking for possible patterns in the data.
 
 We will predict the Unique.Visits feature, which represents the unique visits to a web page, and on the other hand the Returning.Visits feature, which represents the visits of those users who have already visited the site.
 
@@ -110,11 +98,9 @@ cols_to_remove <- c("Day", "Day.Of.Week", "Page.Loads", "First.Time.Visits", "Ro
 website <- website[, !(names(website) %in% cols_to_remove)]
 ```
 
-### 2.1 Data cleaning (NAs, normalization and looking for outliers)
+### 2.2 Data cleaning (NAs and normalization)
 
-We want to ensure that we are working with a reliable and accurate dataset.
-
-Until now, we have 2167 instances.
+We want to ensure that we are working with a reliable and accurate dataset. Until now, we have 2167 instances.
 
 As it has been shown below, there are not any null values in the dataset.
 
@@ -151,16 +137,332 @@ n_rows <- nrow(website)
 print(n_rows)
 ```
 
-### 2.2 
+### 2.3 Data cleaning (looking for outliers)
+
+```{r}
+# Convert 'unique_visits' and 'returning_visits' to numeric after removing commas
+website$unique_visits <- as.numeric(gsub(",", "", website$unique_visits))
+website$returning_visits <- as.numeric(gsub(",", "", website$returning_visits))
+
+# Calculate Z-scores for 'unique_values' and 'returning_values'
+z_scores_unique <- scale(website$unique_visits)
+z_scores_returning <- scale(website$returning_visits)
+
+# Set a threshold to consider a value as an outlier
+threshold <- 2
+
+# Identify outliers in 'unique_values'
+outliers_unique <- which(abs(z_scores_unique) > threshold)
+
+# Identify outliers in 'returning_values'
+outliers_returning <- which(abs(z_scores_returning) > threshold)
+
+# Show the indices of outliers
+cat("Outliers in unique_values:", outliers_unique, "\n")
+cat("Outliers in returning_values:", outliers_returning, "\n")
+```
+
+As we have identified some outliers, we are going to see the distribution of data, in case that it help us to make some transformations that can reduce their impact.
+
+```{r}
+hist(website$unique_visits)
+hist(website$returning_visits)
+```
+
+Both distributions are centered, so no transformations are needed.
+
+Anyway we have also created the following boxplots to see the range of values of both targets:
+
+```{r}
+boxplot(website$unique_visits, outline = FALSE, main = "Unique visits Boxplot")
+
+boxplot(website$returning_visits, outline = FALSE, main = "Returning visits Boxplot")
+
+```
+
+And also two scatter plots highlighting the outliers in red
+
+```{r}
+library(ggplot2)
+
+ggplot(website, aes(x = date, y = unique_visits)) +
+  geom_point(aes(color = ifelse(unique_visits %in% outliers_unique, "Outlier", "Not Outlier"))) +
+  scale_color_manual(values = c("Outlier" = "red", "Not Outlier" = "black"), guide = "none") +
+  labs(title = "Scatter Plot with Outliers Highlighted", x = "Date", y = "Unique Values") +
+  theme_minimal()
+```
+
+```{r}
+ggplot(website, aes(x = date, y = returning_visits)) +
+  geom_point(aes(color = ifelse(returning_visits %in% outliers_returning, "Outlier", "Not Outlier"))) +
+  scale_color_manual(values = c("Outlier" = "red", "Not Outlier" = "black"), guide = "none") +
+  labs(title = "Scatter Plot with Outliers Highlighted", x = "Date", y = "Returning Values") +
+  theme_minimal()
+```
+
+In the context of website visits, occasional spikes or unusual patterns might be expected. For example, outliers could be due to special events, marketing campaigns, or other factors that lead to a sudden increase in traffic. Now that we know where they are, we will have this into account when visualizing data, in order to find patterns.
 
 ## 3. Data visualization (trends and seasonality).
 
-In this section we will look for time-series patterns: trends, cycles, seasonality and volatility
+In this section we will look for time-series patterns: trends, cycles, seasonality and volatility. Start with trends, then seasons, see if there are cycles and they say if the noise is high o r not
 
-Trends: long-term increase or decrease
+After adjusting for seasonality, we can identify better the trends or cycles
 
-Cycles: rises and falls that are not of a fixed period (a pattern that cannot be predicted)
+Seasonal and cyclic patterns are not the same:
+
+\- seasonal pattern constant length, cyclic pattern variable length
+
+\- average length of cycle longer than length of seasonal pattern
+
+\- magnitude of cycle more variable than magnitude of seasonal pattern
+
+\- the timing of peaks and troughs is predictable with seasonal data, but unpredictable in the long term with cyclic data
+
+Trends: long-term increase or decrease. Count the peaks. A peak every 4 quarters. People have more beers in summer than in winter. To predict well, considering the temperature is important (as we see that there is a correlation). The seasonality is a year and the period is 4.
+
+Cycles: rises and falls that are not of a fixed period (a pattern that cannot be predicted). Data is quarterly, so every 3 months there is a quarter.
 
 Seasonality: deterministic pattern (fixed and known length) from a season (every monday, for example \--\> a pattern that can be predicted)
 
 Volatility: size of noise
+
+5)  Will we forecast well or not?
+
+The variables have complex seasonality that is keyed to the day of the week and to the academic calendar. The patterns you you see here are similar in principle to what you would see in other daily data with day-of-week and time-of-year effects. Some good exercises are to develop a 1-day-ahead forecasting model, a 7-day ahead forecasting model, and an entire-next-week forecasting model (i.e., next 7 days) for unique visitors.
+
+```{r}
+library(tidyquant)
+
+# Convert 'date' column to Date format
+website$date <- as.Date(website$date, format = "%m/%d/%Y")
+
+# Graficar usando ggplot2 y tidyquant
+plot_website <- website %>%
+  ggplot(aes(x = date, y = unique_visits)) +
+  geom_line(col = "darkblue", size = 1) +
+  labs(title = "Daily Unique Visits",
+       x = "Date", y = "Unique Visits") +
+  theme_tq()
+
+# Mostrar el gráfico
+print(plot_website)
+
+# Graficar usando ggplot2 y tidyquant
+plot_website2 <- website %>%
+  ggplot(aes(x = date, y = returning_visits)) +
+  geom_line(col = "darkblue", size = 1) +
+  labs(title = "Daily Returning Visits",
+       x = "Date", y = "Returning Visits") +
+  theme_tq()
+
+# Mostrar el gráfico
+print(plot_website2)
+```
+
+```{r}
+website$lag_unique_visits <- lag(website$unique_visits, 250)
+
+# Plotting
+plot_website_lagged <- website %>%
+  ggplot(aes(x = date, y = lag_unique_visits)) +
+  geom_line(col = "darkblue", size = 1) +
+  labs(title = "Lagged Unique Visits",
+       x = "Date", y = "Lagged Unique Visits") +
+  theme_tq()
+
+# Show the plot
+print(plot_website_lagged)
+```
+
+```{r}
+# Assuming 'website' is your dataset
+website %>%
+  ggplot(aes(x = date)) +
+  geom_line(aes(y = unique_visits), color = "blue") +
+  geom_line(aes(y = returning_visits), color = "red") +
+  labs(title = "Time Series Plot for Targets",
+       x = "Time", y = "Target Values") +
+  theme_minimal()
+
+```
+
+```{r}
+# Assuming 'website' is your dataset
+website %>%
+  ggplot(aes(x = unique_visits, y = returning_visits)) +
+  geom_point() +
+  labs(title = "Scatter Plot for Targets",
+       x = "Unique Values", y = "Returning Values") +
+  theme_minimal()
+
+```
+
+Graph the data and try to answer:
+
+\- Are there consistent patterns?
+
+\- Is there a significant trend?
+
+\- Is seasonality important?
+
+\- Is there evidence of the presence of cycles?
+
+\- Are there significant changes in volatility?
+
+\- Are there any outliers in the data?
+
+\- How strong are the relationships among the variables?
+
+First insights:
+
+\- Frequency (hourly, daily, monthly, etc.)
+
+\- Forecasting horizon (one-day ahead, 7-days ahead, etc.)
+
+\- Features (from the own target, and other variables)
+
+\- Performance measures (mse, mape, based on costs, etc.)
+
+\- Prediction intervals
+
+\- Models (traditional, ML, etc.)
+
+```{r}
+library(tsibble) # Para autoplot
+
+# Asumiendo que quieres trabajar con unique_visits
+website <- website |> mutate(unique_visits = as.numeric(gsub(",", "", unique_visits))) # Convertir a numérico
+website_ts <- website |> as_tsibble(index = date) # Convertir a tsibble
+
+website_ts |> autoplot(unique_visits)
+```
+
+```{r}
+# Asumiendo que quieres trabajar con returning_visits
+website <- website |> mutate(returning_visits = as.numeric(gsub(",", "", returning_visits))) # Convertir a numérico
+website_ts <- website |> as_tsibble(index = date) # Convertir a tsibble
+
+website_ts |> autoplot(returning_visits)
+
+```
+
+Para seasonalities:
+
+```{r}
+library(feasts)
+
+#Convertir a tsibble
+website_ts <- website %>% as_tsibble(index = date)
+
+# Para visualizar estacionalidad en 'unique_visits'
+website_ts %>% gg_season(unique_visits, labels = "right") + labs(title = "Estacionalidad de Visitas Únicas")
+
+# O para 'returning_visits'
+website_ts %>% gg_season(returning_visits, labels = "right") + labs(title = "Estacionalidad de Visitas Recurrentes")
+```
+
+Multiple seasonal periods:
+
+Day of the week:
+
+```{r}
+website_ts |> gg_season(unique_visits, period = "week")
+website_ts |> gg_season(returning_visits, period = "week")
+
+```
+
+Academic calendar:
+
+```{r}
+website_ts |> gg_season(unique_visits, period = "year")
+website_ts |> gg_season(returning_visits, period = "year")
+```
+
+Seasonal Subseries Plot:
+
+```{r}
+website_ts |> gg_subseries(returning_visits)
+```
+
+### Autocorrelations and lags
+
+#### ACF
+
+Lags: aquí 7 lags son 1 semana
+
+For lag 4 (4 periods), correlation is very clear. It makes sense as 4 periods correspond to a year (and the seasonality was year).
+
+Here lag 8 correlation is very high because of lag's 4 correlation, but sometimes lag 8's correlation could be independent of lag's 4 correlation.
+
+The autocorrelation function is used to compute all these correlations. Used to create models.
+
+```{r}
+website_ts |> gg_lag(unique_visits, geom = "point")
+website_ts |> gg_lag(returning_visits, geom = "point")
+
+```
+
+If there is seasonality, the ACF at the seasonal lag (e.g., 12 for monthly data) will be large and positive.
+
+Autocorrelation:
+
+```{r}
+website_ts |> ACF(unique_visits) |> autoplot()
+website_ts |> ACF(returning_visits) |> autoplot()
+
+```
+
+When data have a trend, the autocorrelations for small lags tend to be large and positive
+
+\- When data are seasonal, the autocorrelations will be larger at the seasonal lags (i.e., at multiples of the seasonal frequency)
+
+\- When data are trended and seasonal, you see a combination of these effects
+
+```{r}
+website_ts |> ACF(unique_visits - lag(unique_visits), lag_max = 48) |> autoplot()
+
+website_ts |> ACF(returning_visits - lag(returning_visits), lag_max = 48) |> autoplot()
+
+```
+
+#### PACF
+
+PACF measures the linear relationship between the correlations of the residuals, hence removes the dependence of lags on other lags.
+
+```{r}
+website_ts |> PACF(unique_visits, lag_max = 48) |> autoplot()
+website_ts |> PACF(returning_visits, lag_max = 48) |> autoplot()
+
+```
+
+```{r}
+website_ts <- website |> mutate(return = difference(unique_visits)/lag(unique_visits))
+
+```
+
+#### Time-Series decomposition
+
+In order to get the trend, we can compute the average (apply filtering) using loesg from ggplot. The function is only based in the past data.
+
+STL(Employed \~ trend(6)) \--\> it is 6 by default. It represents the number of periods that R is using to compute the average/smooth the function. The biggest, the smoother.
+
+```{r}
+website_ts <- website %>% as_tsibble(index = date)
+
+dcmp <- website_ts |>
+  model(stl = STL(unique_visits))
+components(dcmp) |> autoplot()
+```
+
+```{r}
+website_model <- website_ts %>%
+  model(stl = STL(unique_visits ~ season(window = "periodic")))
+components(website_model) |> autoplot()
+```
+
+```{r}
+website_ts |>
+  autoplot(unique_visits, color = "gray") +
+  autolayer(components(dcmp), trend, color = "#D55E00") +
+  labs(y = "Visits to website", title = "Total visits")
+```
