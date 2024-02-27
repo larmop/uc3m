@@ -44,7 +44,7 @@ Some of the advantages of predicting future visits are:
 
 ![](foto.jpeg){width="565"}
 
-In this case study, we will use a data set with 2167 instances of website visits in cinemas from 2014 to 2020. This file contains 5 years of daily time series data for various traffic measures on a statistical forecasting website.
+In this case study, we will use a data set with 2167 instances of website visits from September 14, 2014, to August 19, 2020. This file contains 5 years of daily time series data for various traffic measures on a statistical forecasting teaching notes website.
 
 We took the dataset from Kaggle: <https://www.kaggle.com/datasets/bobnau/daily-website-visitors/>
 
@@ -139,32 +139,13 @@ print(n_rows)
 
 ### 2.3 Data cleaning (looking for outliers)
 
+We are going to see the distribution of data, in case that it help us to make some transformations that can reduce their impact.
+
 ```{r}
 # Convert 'unique_visits' and 'returning_visits' to numeric after removing commas
 website$unique_visits <- as.numeric(gsub(",", "", website$unique_visits))
 website$returning_visits <- as.numeric(gsub(",", "", website$returning_visits))
 
-# Calculate Z-scores for 'unique_values' and 'returning_values'
-z_scores_unique <- scale(website$unique_visits)
-z_scores_returning <- scale(website$returning_visits)
-
-# Set a threshold to consider a value as an outlier
-threshold <- 2
-
-# Identify outliers in 'unique_values'
-outliers_unique <- which(abs(z_scores_unique) > threshold)
-
-# Identify outliers in 'returning_values'
-outliers_returning <- which(abs(z_scores_returning) > threshold)
-
-# Show the indices of outliers
-cat("Outliers in unique_values:", outliers_unique, "\n")
-cat("Outliers in returning_values:", outliers_returning, "\n")
-```
-
-As we have identified some outliers, we are going to see the distribution of data, in case that it help us to make some transformations that can reduce their impact.
-
-```{r}
 hist(website$unique_visits)
 hist(website$returning_visits)
 ```
@@ -180,55 +161,49 @@ boxplot(website$returning_visits, outline = FALSE, main = "Returning visits Boxp
 
 ```
 
-And also two scatter plots highlighting the outliers in red
+In the context of website visits, occasional spikes or unusual patterns might exist. For example, outliers could be due to special events, marketing campaigns, or other factors that lead to a sudden increase in traffic. We are using the tsoutliers library in order to treat possible outliers.
 
 ```{r}
-library(ggplot2)
+library(tsoutliers)
 
-ggplot(website, aes(x = date, y = unique_visits)) +
-  geom_point(aes(color = ifelse(unique_visits %in% outliers_unique, "Outlier", "Not Outlier"))) +
-  scale_color_manual(values = c("Outlier" = "red", "Not Outlier" = "black"), guide = "none") +
-  labs(title = "Scatter Plot with Outliers Highlighted", x = "Date", y = "Unique Values") +
-  theme_minimal()
+ts_data <- ts(website[, c("unique_visits", "returning_visits")], frequency = 365)
+
+# Detect outliers for unique_visits
+outliers_unique <- tso(ts_data[, "unique_visits"])
+
+# Plotting the time series data for unique_visits
+plot(ts_data[, "unique_visits"], type = "l", main = "Time Series with Outliers (Unique Visits)")
+
+# Add points for detected outliers
+outliers_index_unique <- as.numeric(rownames(outliers_unique))
+points(outliers_index_unique, ts_data[outliers_index_unique, "unique_visits"], col = "red", pch = 16)
+
+# Add legend
+legend("topright", legend = "Outliers", col = "red", pch = 16)
+
+# Detect outliers for returning_visits
+outliers_returning <- tso(ts_data[, "returning_visits"])
+
+# Plotting the time series data for returning_visits
+plot(ts_data[, "returning_visits"], type = "l", main = "Time Series with Outliers (Returning Visits)")
+
+# Add points for detected outliers
+outliers_index_returning <- as.numeric(rownames(outliers_returning))
+points(outliers_index_returning, ts_data[outliers_index_returning, "returning_visits"], col = "red", pch = 16)
+
+# Add legend
+legend("topright", legend = "Outliers", col = "red", pch = 16)
 ```
 
-```{r}
-ggplot(website, aes(x = date, y = returning_visits)) +
-  geom_point(aes(color = ifelse(returning_visits %in% outliers_returning, "Outlier", "Not Outlier"))) +
-  scale_color_manual(values = c("Outlier" = "red", "Not Outlier" = "black"), guide = "none") +
-  labs(title = "Scatter Plot with Outliers Highlighted", x = "Date", y = "Returning Values") +
-  theme_minimal()
-```
+As we have seen, there are only 7 outliers in both targets. In any case, that there are so little outliers does not mean that there are no patterns representing special events in the data.
 
-In the context of website visits, occasional spikes or unusual patterns might be expected. For example, outliers could be due to special events, marketing campaigns, or other factors that lead to a sudden increase in traffic. Now that we know where they are, we will have this into account when visualizing data, in order to find patterns.
+Considering the seasonality and trends in our data, that we will do in the next section, will help us differentiate between expected patterns and unusual events.
 
-## 3. Data visualization (trends and seasonality).
+## 3. Data visualization
 
-In this section we will look for time-series patterns: trends, cycles, seasonality and volatility. Start with trends, then seasons, see if there are cycles and they say if the noise is high o r not
+In this section we will look for time-series patterns: trends, cycles, seasonality and volatility. We will start with trends, then seasons, see if there are cycles and finally see if the noise is high or not.
 
-After adjusting for seasonality, we can identify better the trends or cycles
-
-Seasonal and cyclic patterns are not the same:
-
-\- seasonal pattern constant length, cyclic pattern variable length
-
-\- average length of cycle longer than length of seasonal pattern
-
-\- magnitude of cycle more variable than magnitude of seasonal pattern
-
-\- the timing of peaks and troughs is predictable with seasonal data, but unpredictable in the long term with cyclic data
-
-Trends: long-term increase or decrease. Count the peaks. A peak every 4 quarters. People have more beers in summer than in winter. To predict well, considering the temperature is important (as we see that there is a correlation). The seasonality is a year and the period is 4.
-
-Cycles: rises and falls that are not of a fixed period (a pattern that cannot be predicted). Data is quarterly, so every 3 months there is a quarter.
-
-Seasonality: deterministic pattern (fixed and known length) from a season (every monday, for example \--\> a pattern that can be predicted)
-
-Volatility: size of noise
-
-5)  Will we forecast well or not?
-
-The variables have complex seasonality that is keyed to the day of the week and to the academic calendar. The patterns you you see here are similar in principle to what you would see in other daily data with day-of-week and time-of-year effects. Some good exercises are to develop a 1-day-ahead forecasting model, a 7-day ahead forecasting model, and an entire-next-week forecasting model (i.e., next 7 days) for unique visitors.
+### 3.1 For unique visits
 
 ```{r}
 library(tidyquant)
@@ -236,7 +211,6 @@ library(tidyquant)
 # Convert 'date' column to Date format
 website$date <- as.Date(website$date, format = "%m/%d/%Y")
 
-# Graficar usando ggplot2 y tidyquant
 plot_website <- website %>%
   ggplot(aes(x = date, y = unique_visits)) +
   geom_line(col = "darkblue", size = 1) +
@@ -244,35 +218,99 @@ plot_website <- website %>%
        x = "Date", y = "Unique Visits") +
   theme_tq()
 
-# Mostrar el gráfico
 print(plot_website)
+```
 
-# Graficar usando ggplot2 y tidyquant
+1.  **Trends:** In the long term, we are looking for either an increase or a decrease. It is more or less constant here.
+2.  **Seasons:** From the current plot, it can be seen that there is at least a yearly seasonality, every year the plot is similar to the previous one. Only by watching the plot, it cannot be know whether there are more seasonalities.
+
+After this visual analysis and in order to be more accurate in finding not only trends ans seasonalities, but also possible cycles and residuals, we will use both Time-Series Decomposition and Seasonal adjustment.
+
+#### 3.1.1 Time-Series decomposition and seasonal adjustment
+
+Here we will be using the Additive Decomposition: y_t = T_t + S_t + R_t, where:
+
+-   T_t is the Trend-Cycle component (aperiodic changes in level)
+
+-   S_t is the Seasonal component (periodic changes)
+
+-   R_t is the remainder component
+
+```{r}
+#Turn it into a time series variable
+website_ts <- website %>% as_tsibble(index = date)
+
+dcmp <- website_ts |>
+  model(stl = STL(unique_visits))
+components(dcmp) |> autoplot()
+```
+
+As we had visualized before, there is a yearly seasonality, and there is also a weekly seasonality that we could not see in the general plot.
+
+Given the nature of the data, we can guess that, as the data are from accesses to an academic notes website, seasonalities may be related to two facts:
+
+-   Weekly seasonality (day of the week) may have to do with students consulting less notes during weekends.
+
+-   Yearly seasonality may be related to the length of the academic year/calendar. During holidays, fewer notes are likely to be consulted.
+
+It would be interesting to indicate that the seasonal component in the STL method should be modeled in a way that takes into account the inherent periodicity in the time series, with the seasonalities we have found with the academic year and the days of the week. This option could help to capture and model both seasonalities more effectively, as we believe that both the weekly and the yearly seasonal patterns are consistent and do not change significantly over the observed time period. To capture this stability, we specify the option *periodic*:
+
+```{r}
+website_model <- website_ts %>%
+  model(stl = STL(unique_visits ~ season(window = "periodic")))
+components(website_model) |> autoplot()
+```
+
+However, once we have tried this option, we observe something similar to a trend in the residuals. Sometimes, for shorter time series or data with limited seasonal cycles, strictly enforcing a periodic window might lead to over fitting, where the model captures noise as if it were a true pattern. As this has been our case, because residuals are now further from white noise than before, we will not use the *periodic* specification, just to be conservative in order to build the models and forecast later.
+
+After adjusting for seasonality, we can identify better the trends or cycles.
+
+We apply seasonal adjustment here, to show how the series looks after adjusting and removing seasonality.
+
+```{r}
+
+```
+
+3.  **Cycles:** In the previous plots we have seen that there is not a clear trend, but a cycle, as it magnitude is variable and the timing of peaks and troughs is unpredictable in the long term and not of a fixed period.
+
+    The trend/cycle is highlighted here, providing a more focused visualization of the overall direction of the time series, excluding seasonal variations.
+
+    ```{r}
+    website_ts |>
+      autoplot(unique_visits, color = "gray") +
+      autolayer(components(dcmp), trend, color = "#D55E00") +
+      labs(y = "Visits to website", title = "Total visits")
+    ```
+
+4.  **Residuals:** Ideally, residuals should appear as a "noise" without any discernible pattern. This indicates that the model has successfully extracted the trend and seasonal components from the data, leaving behind the unexplained variance which should ideally follow a normal distribution with mean zero. There are not any systematic patterns or outliers getting our attention.
+
+5.  **Volatility**: We see changing volatility, where the size of the residuals (and thus the noise) varies at different times, suggesting periods of increased or decreased uncertainty in the series. Residuals can be forecast but noise cannot.
+
+**Will we forecast well?**
+
+The STL decomposition separates quite clearly the trend and seasonal components, leaving residuals that do not completely appear as white noise, but do not show any pattern or outlier.
+
+This is a good indication that the model has captured the main systematic parts of the series. It suggests that future forecasts might be relatively accurate, as the model can leverage these well-defined components.
+
+Now, we have to decide whether we will forecast based on the day-of-week or the time-of-year effects. We will develop a 1-day-ahead forecasting model and a 7-day ahead forecasting model.
+
+### 3.2 For returning visits:
+
+```{r}
 plot_website2 <- website %>%
   ggplot(aes(x = date, y = returning_visits)) +
-  geom_line(col = "darkblue", size = 1) +
+  geom_line(col = "darkgreen", size = 1) +
   labs(title = "Daily Returning Visits",
        x = "Date", y = "Returning Visits") +
   theme_tq()
 
-# Mostrar el gráfico
 print(plot_website2)
 ```
 
-```{r}
-website$lag_unique_visits <- lag(website$unique_visits, 250)
+1.  **Trends:** In the long term, we are looking for either an increase or a decrease. It is more or less constant here.
+2.  **Seasons:** From the current plot, it can be seen that there is at least a yearly seasonality, every year the plot is similar to the previous one.
 
-# Plotting
-plot_website_lagged <- website %>%
-  ggplot(aes(x = date, y = lag_unique_visits)) +
-  geom_line(col = "darkblue", size = 1) +
-  labs(title = "Lagged Unique Visits",
-       x = "Date", y = "Lagged Unique Visits") +
-  theme_tq()
-
-# Show the plot
-print(plot_website_lagged)
-```
+After adjusting for seasonality, we can identify better the trends or cycles.
 
 ```{r}
 # Assuming 'website' is your dataset
@@ -328,9 +366,8 @@ First insights:
 \- Models (traditional, ML, etc.)
 
 ```{r}
-library(tsibble) # Para autoplot
+library(tsibble)
 
-# Asumiendo que quieres trabajar con unique_visits
 website <- website |> mutate(unique_visits = as.numeric(gsub(",", "", unique_visits))) # Convertir a numérico
 website_ts <- website |> as_tsibble(index = date) # Convertir a tsibble
 
@@ -338,7 +375,6 @@ website_ts |> autoplot(unique_visits)
 ```
 
 ```{r}
-# Asumiendo que quieres trabajar con returning_visits
 website <- website |> mutate(returning_visits = as.numeric(gsub(",", "", returning_visits))) # Convertir a numérico
 website_ts <- website |> as_tsibble(index = date) # Convertir a tsibble
 
@@ -371,6 +407,13 @@ website_ts |> gg_season(returning_visits, period = "week")
 
 ```
 
+Monthly:
+
+```{r}
+website_ts |> gg_season(unique_visits, period = "month")
+website_ts |> gg_season(returning_visits, period = "month")
+```
+
 Academic calendar:
 
 ```{r}
@@ -378,13 +421,29 @@ website_ts |> gg_season(unique_visits, period = "year")
 website_ts |> gg_season(returning_visits, period = "year")
 ```
 
-Seasonal Subseries Plot:
+Decide if we will predict for next day, month, etc: If we predict what will happen tomorrow respect to today cor (Yt, Yt-1)\--\> autocorrelation of order 1
 
-```{r}
-website_ts |> gg_subseries(returning_visits)
-```
+cor (Yt, Yt-2) \--\> order 2
 
-### Autocorrelations and lags
+This order (the amount of info from the past needed to predict) is a hyperparameter of the model.
+
+Y \| X
+
+Y2 \| Y1
+
+Y3 \| Y2
+
+...
+
+YT \| YT+1
+
+If the trend is already linearly increasing, don't perform any transformation to the data.
+
+I want to predict in the short term so try to find a trend in the short term --\> 1 day ahead or 7 days ahead
+
+## 4. Statistical Analysis (tests, ACF, PACF, performance, etc.). Looking for the best model.
+
+### Autocorrelations and lags --\> Also take dfferences here to decide ARIMAs
 
 #### ACF
 
@@ -406,15 +465,26 @@ If there is seasonality, the ACF at the seasonal lag (e.g., 12 for monthly data)
 
 Autocorrelation:
 
+The first bar represents the correlation between a period and the previous one.
+
+The negatives are consequence of the positives.
+
+If the correlation is inside the blue area, it can be said that it is zero.
+
+Positive bars are decreasing. depending on the speed they're decreasing at, we should use faster or slower models.
+
+If it is similar to a line \--\> slow
+
+If it is almost a curve \--\> Fast
+
 ```{r}
 website_ts |> ACF(unique_visits) |> autoplot()
 website_ts |> ACF(returning_visits) |> autoplot()
-
 ```
 
-When data have a trend, the autocorrelations for small lags tend to be large and positive
+When data have a trend, the auto correlations for small lags tend to be large and positive
 
-\- When data are seasonal, the autocorrelations will be larger at the seasonal lags (i.e., at multiples of the seasonal frequency)
+\- When data are seasonal, the auto correlations will be larger at the seasonal lags (i.e., at multiples of the seasonal frequency)
 
 \- When data are trended and seasonal, you see a combination of these effects
 
@@ -424,6 +494,14 @@ website_ts |> ACF(unique_visits - lag(unique_visits), lag_max = 48) |> autoplot(
 website_ts |> ACF(returning_visits - lag(returning_visits), lag_max = 48) |> autoplot()
 
 ```
+
+Short-term correlation is more important when the correlations are high.
+
+See if there are peaks in multiples of X.
+
+If there is a 1 correlation, we cannot forecast as the numerator is 0.
+
+When plotting adjusted - lad(adjusted) we plot cor (Rt, Rt-lag)
 
 #### PACF
 
@@ -440,29 +518,598 @@ website_ts <- website |> mutate(return = difference(unique_visits)/lag(unique_vi
 
 ```
 
-#### Time-Series decomposition
+#### Seasonal adjustment:
 
-In order to get the trend, we can compute the average (apply filtering) using loesg from ggplot. The function is only based in the past data.
+Useful by-product of decomposition: an easy way to calculate seasonally adjusted data. See whether the number of unique visits is changing removing the season.
 
-STL(Employed \~ trend(6)) \--\> it is 6 by default. It represents the number of periods that R is using to compute the average/smooth the function. The biggest, the smoother.
+Additive decomposition: seasonally adjusted data given by (removing the seasonality) --\> y_t - S_t = T_t + R_t
 
-```{r}
-website_ts <- website %>% as_tsibble(index = date)
+Multiplicative decomposition: seasonally adjusted data given by: y_t / S_t = T_t \\times R_t
 
-dcmp <- website_ts |>
-  model(stl = STL(unique_visits))
-components(dcmp) |> autoplot()
-```
-
-```{r}
-website_model <- website_ts %>%
-  model(stl = STL(unique_visits ~ season(window = "periodic")))
-components(website_model) |> autoplot()
-```
+Shows how the series looks after adjusting and removing seasonality. Seasonal components have been removed:
 
 ```{r}
 website_ts |>
   autoplot(unique_visits, color = "gray") +
-  autolayer(components(dcmp), trend, color = "#D55E00") +
-  labs(y = "Visits to website", title = "Total visits")
+  autolayer(components(dcmp), season_adjust, color = "#0072B2") +
+  labs(y = "Unique visits", title = "Total visits")
 ```
+
+#### Differencing
+
+IF there is a trend, remove it using the difference:
+
+```{r}
+#ACF(website_ts, difference(unique_visits), lag_max = 20) |> autoplot()
+ACF(website_ts, difference(unique_visits)) |> autoplot()
+```
+
+Now, we can have two options:
+
+1.  the ACF shows a first big bar, and rest 0 \--\> MA(1)
+
+2.  ACF shows a fast decreasing \--\> AR(1)
+
+To better decide, we observe the PACF, that shows a big bar. Then, we take before as a decreasing, so we finally choose a AR(1)\--\>ARIMA(1,1,0).
+
+But we can always try different models such as ARIMA(0,1,1)
+
+```{r}
+#PACF(website_ts, difference(unique_visits), lag_max = 20) |> autoplot()
+PACF(website_ts, difference(unique_visits)) |> autoplot()
+```
+
+After stabilizing the variance, control for trends and seasons:
+
+\- First difference: \$\\triangle y_t = w\_{t} = y\_{t}-y\_{t-1}\$
+
+\- Second difference: \$\\triangle w_t = w\_{t}-w\_{t-1}=y\_{t}-2y\_{t-1}+y\_{t-2}\$
+
+\- Seasonal difference: \$\\triangle_m y_t = y_t-y\_{t-m}\$ (\$m=\$ period of season)
+
+Let's observe the time series with difference. In case we have still some trend (in this case it can be seen a little decreasing trend), we must choose d=2. However, is more careful and conservative to choose d=1. Only choose d=2 if the trend is much more clear.
+
+```{r}
+website_ts %>% autoplot(difference(unique_visits))
+```
+
+If we have doubts regarding differencing, better be conservative: do not differentiate
+
+Otherwise, overdifferencing will tend to degrade the quality of forecasts
+
+In practice, we take differences if the ACF decays slowly
+
+But how to determine more objectively if differencing is required?
+
+#### **Stationarity Testing**
+
+Augmented Dickey-Fuller (ADF) test:
+
+\- The null-hypothesis for an ADF test is that the data are non-stationary
+
+\- The test is based on \$\\hat{\\rho}\$. If it is enough negative, then reject
+
+\- Differencing is required if the p-value is greater than 0.05
+
+```{r}
+library(tseries)
+
+# Function to perform Augmented Dickey-Fuller Test
+Augmented_Dickey_Fuller_Test_func <- function(series, column_name) {
+  cat(paste("Dickey-Fuller test results for column:", column_name, "\n"))
+  
+  # Perform ADF test
+  adf_test <- tseries::adf.test(series, alternative = "stationary")
+  
+  # Display the results
+  dfoutput <- c(
+    "Test Statistic" = adf_test$statistic,
+    "p-value" = adf_test$p.value,
+    "No Lags Used" = adf_test$parameter,
+    "Number of observations used" = adf_test$method
+  )
+  
+  cat(dfoutput, "\n")
+  
+  # Display Critical Values
+  cat("Critical Values:\n")
+  for (key in names(adf_test$critical)) {
+    cat(paste("  Critical Value (", key, "): ", adf_test$critical[[key]], "\n"))
+  }
+  
+  # Conclusion
+  cat("Conclusion:====>\n")
+  if (adf_test$p.value <= 0.05) {
+    cat("Reject the null hypothesis\n")
+    cat("The data is stationary\n")
+  } else {
+    cat("The null hypothesis cannot be rejected\n")
+    cat("The data is not stationary\n")
+  }
+}
+```
+
+```{r}
+Augmented_Dickey_Fuller_Test_func(website_ts$unique_visits, "unique_visits")
+```
+
+Alternative:
+
+```{r}
+# Assuming website_ts is a tibble and "unique_visits" is the column of interest
+X <- website_ts$unique_visits
+
+# Convert X to a numeric vector
+X <- as.numeric(X)
+
+# Perform Augmented Dickey-Fuller test
+adf_test_result <- adf.test(X, alternative = "stationary")
+
+# Print the results
+print(adf_test_result)
+
+# Extracting the values from the results
+cat('ADF Statistic: ', adf_test_result$statistic, '\n')
+cat('p-value: ', adf_test_result$p.value, '\n')
+
+# Making a decision based on the test
+if (adf_test_result$p.value < 0.05) {
+  cat("Reject H0 - Time Series is Stationary\n")
+} else {
+  cat("Failed to Reject Ho - Time Series is Non-Stationary\n")
+}
+
+
+```
+
+**When there is seasonality:**
+
+Visualization of ACF and PCF to select the hyperparameters.
+
+If there is a negative trend before (so d=1) \--\> then 2 differences
+
+difference(difference(Beer,4),1) \--\> The 4 is because of the season and the 1 because of the trend. d=1 and D=4
+
+From here the model should be guessed.
+
+As it is a big line and the rest are 0 \--\> MA(1). The third bar is because of an interaction.
+
+For the seasonal part, only look at bars multiple of 4: 4, 8, 12... They are practically 0 except of the rest, so it is an MA(1), AS THERE IS NO DECREASING.
+
+So the guess is MA(1)xMA(1)\_4
+
+```{r}
+train <- aus_production %>% filter_index("1992 Q1" ~ "2006 Q4")
+
+ACF(train, difference(Beer, 4), lag_max = 20) |> autoplot()
+```
+
+```{r}
+PACF(train, difference(Beer, 4), lag_max = 20) |> autoplot()
+```
+
+#### Train/Test: Try with different training and test sets
+
+As we are not sure about the model to choose, we would evaluate with train/test evaluation. To do it, we split into training and test, but importart to do it in order, as we are with time series. Train with data up to 2013 (to test later from 2014).
+
+IMPORTANT: the window size for training set is an hyper parameter that is important to avoid over fitting. Many times training with all the dataset is too much, it will overfit.
+
+The best model depends on if we are predicting in the long or the short term because the size of the window changes.
+
+We evaluate 5 models:
+
+\- model 1: ARIMA(1,1,0) + constant
+
+\- model 2: ARIMA(1,1,0) without constant
+
+\- model 3: ARIMA(1,2,0) no constant
+
+\- model 4: ARMA(1,1)
+
+\- model 5: automatic ARIMA
+
+!!important: if d=0, constant is obligatory.
+
+Now focus on 1 training window and build the model after having removed the trend and the seasonalities (residuals = original - trend - seasonality). Model ALWAYS with the residuals.
+
+We cannot select the training set by chance because of the temporal component.
+
+We must use a sliding window instead.
+
+To select the size of the training window:
+
+1)  Choose whichever training window and compute the MSE in the right
+
+2)  Increase the window a bit and forecast what is in the right and see how the MSE increases or decreases in the right.
+
+```{r}
+Prices |> model(rw = RW(adjusted)) |> forecast(h = 5) |> autoplot(tail(Prices,50))
+
+```
+
+#### Model 0: Naive
+
+Forecast and its errors:
+
+```{r}
+sp500_fit = Prices[900:1000,] |>
+  model(
+    `Naïve` = NAIVE(adjusted),
+    Drift = RW(adjusted ~ drift()),
+    Mean = MEAN(adjusted)
+  )
+
+sp500_fc <- sp500_fit |> forecast(h = 5)
+sp500_fc |>
+  autoplot(tail(Prices, 100), level = NULL) +
+  labs(title = "Forecasts for S&P 500: 5-days ahead",
+       x = "", y = "S&P 500 Index") +
+  guides(colour = guide_legend(title = "Forecast"))
+
+accuracy(sp500_fc, Prices)
+```
+
+#### Model 1: ETS
+
+Exponential smoothing is something in the middle, assign decreasing weights (exponentially):
+
+Exponential smoothing applied to components: level, seasonality, and trend
+
+ETS stands for both ExponenTial Smoothing and Error, Trend, and Seasonality
+
+Exponential smoothing state space model: forecasts based on previous observations, with weights using exponential smoothing (more recent observations have more weight)
+
+E: Additive (A) or multiplicative (M)
+
+T: None (N), additive (A), multiplicative (M), or damped (Ad or Md).
+
+S: None (N), additive (A) or multiplicative (M)
+
+ETS Models are estimated by maximum likelihood, and hyper-parameters selected by AIC
+
+2x4x3 = 24 possible combinations. For each combination we have 1 or 2 parameters.
+
+The final model chosen by the library with smallest MSE+ penalty (BIC, AIC) is
+
+\- Error: Multiplicative
+
+\- Trend: Additive
+
+\- Seasonality: None
+
+```{r}
+Spain_pop = global_economy |> filter(Country == "Spain") |> mutate(Pop = Population / 1e6)
+
+fit <- Spain_pop |> model(ets = ETS(Pop)) #selecting the best model along the ETS family
+#To do it, tries the 24 options and decide based on an evaluation metric: MSE.This is a good metric for the past, but we would like a good metric for the future: MSE in the testing set (decompose first the time series in train and test).
+
+#It will take MSE in the training and apply some penalty: BIC, AIC (prediction error in the past + penalty to predict the future better) --> this is faster.
+#Best model is Multiplicative for the error, for trend Additive and for Seasonality None.
+
+fit
+```
+
+Predicting the population in Spain for the coming 10 years
+
+```{r}
+forecast = fit |>  forecast(h = 10) #forecasting horizon: 10 years from the very last year in the dataset (2017 here)
+forecast
+```
+
+It will follow a Normal distribution N(47,0.089). So, 47 million people is the mean and then is the uncertainty (it's width), that is 3.4 for the last year predicted. The last column mean is the forecast.
+
+By observing the standard deviation values (uncertainty), we can see how this model works better for near years, but has more uncertainty on the long term.
+
+We can observe on a plot previous results to better understand them. Wider interval is the 95%.
+
+```{r}
+forecast |> autoplot(Spain_pop)
+```
+
+See if the uncertainty increases when predicting furthest years.
+
+If uncertainty is very small, it is capturing seasonality very well. So the width, that is the error, is small.
+
+Exponential Smoothing with seasonal methods:
+
+chosen model is M, N, A.
+
+```{r}
+holidays <- tourism |>  filter(Purpose == "Holiday", Region == "Snowy Mountains")
+fit <- holidays |> model(ets = ETS(Trips))
+fit
+```
+
+forecasting by default 2 or 3 years. This example has less uncertainty because the width of the intervals is small.
+
+```{r}
+fit |>  forecast() |>  autoplot(holidays) +
+  labs(x = "Year", y = "Overnight trips (thousands)")
+```
+
+#### Model 2: STL
+
+STL (Seasonal Decomposition of Time Series):] extracts trend, seasonal, with locally smoothed moving average
+
+#### Model 3: ARIMA
+
+ARIMA (auto-regressive and moving average: based on a description of the auto correlations. ARIMA models assume past and future are related in a linear way
+
+Although it is more manual and requires more time, the forecasts are better than with ETS.
+
+AR Models: autoregressive (lagged observations as inputs)
+
+MA Models: moving average (lagged errors as inputs)
+
+Analyse errors in the past to improve the prediction in the future.
+
+MA(Q) with Q being the number of days we need to use for the errors. If Q=0 we cannot learn from the past to learn. Q is a hyper-parameter that is normally between 0 and 3.
+
+AR(P) with P being the number of days needed to predict what will happen tomorrow (hyperparameter). It is a small number.
+
+The I is whether or not to take differences in the time series. If we have removed trend and seasonality, residuals are ARMAs.
+
+If there is no trend: d=0
+
+If there is a more or less linear trend: d=1
+
+If the trend in more or less bigger or it has a quadratic speed then: d=2.
+
+Take d=1 from the beginning and if the residuals are more or less constant then leave it like it is.
+
+##### 1. Choosing d: ACF, PACF to decide d and then which model to try (difference(..
+
+If a difference is taken when it is not needed \--\> overfitting. To test this, the null hypothesis is that we don't need to take differences (d=0). There is a function Dickey-Fuller, in R ADF.If the p value is small enough, reject the H0 and take the difference.
+
+For months: 12, for weeks: 52.
+
+There are two seasonalities, so we choose the one that is more important (7 years of daily data, periods of 7 days and 365 days). It is chosen using period=a number.
+
+To deal with the second most important one, deal with it as another trend.
+
+Another option is just to plot the time-series: if you see a trend \--\> take the difference. If not: don't.
+
+Plotting the ACF:
+
+```{r}
+ar1 <- arima.sim(n=100,list(ar=c(0.8))) |> as_tsibble() ###THIS IS A SIMULATION --> use my data
+
+ACF(ar1, value, lag_max = 20) |> autoplot() + labs(title = "ACF of AR1 Model")
+```
+
+AR(1): Bars decrease like a curve. This is 0.8\^k. (0.8 is phi and 1 is p?). As 0.8 is close to 1, then the progression is close to a line. If 0.8 was close to zero, the speed would be very high but predictions would be worst (the larger the beta, the better to predict). If the decreasing was completely linear, then take d=1 because we cannot forecast if the decreasing is not geometric.
+
+AR(2): The decreasing here starts from the second bar.
+
+MA(1): Completely opposite to the behavior of the previous: PACF should look as the auto correlation and reversal. Only 1 line and the rest zeros.
+
+MA(2): Here we expect to see two big lines.
+
+Plotting the PACF:
+
+```{r}
+PACF(ar1, value, lag_max = 20) |> autoplot() + labs(title = "PACF of AR1 Model")
+```
+
+AR(1) --\> There is no decreasing at all. So PACF(1)= phi = 0.8 AND PACF(2) = 0 and the rest are also 0. p=1!!!!
+
+AR(2): Here we need to see two big lines and the rest close to zero.
+
+MA(1): Geometric decreasing tendency (in absolute value)
+
+MA(2): Here we expect to see decreasing from the second line.
+
+**MODELS ARPA(p,q)**
+
+AR(1): A decreasing in the auto correlation and no decreasing at all, only one line, in the partial auto correlation
+
+ARMA(1,1): We expect to see decreasing on both AC and partial AC. It is very difficult to distinguish between ARMA(1,1), ARMA(2,1) and ARMA(1,2). Try the 3 and evaluate with crossvalidation. Other way to evaluate is to use the p values of the parameters.
+
+##### 2. Choosing p and q: AR(p), MA(q)
+
+To determine the value of p and q, we need autocorreation and partial autocorelation functions
+
+##### 3. Meaning of the values
+
+\- If \$c=0\$ and \$d=0\$, the long-term forecasts will go to zero
+
+\- If \$c=0\$ and \$d=1\$, the long-term forecasts will go to a non-zero constant
+
+\- If \$c=0\$ and \$d=2\$, the long-term forecasts will follow a straight line
+
+\- If \$c\\ne0\$ and \$d=0\$, the long-term forecasts will go to the mean of the data
+
+\- If \$c\\ne0\$ and \$d=1\$, the long-term forecasts will follow a straight line
+
+\- If \$c\\ne0\$ and \$d=2\$, the long-term forecasts will follow a quadratic trend
+
+## 4. Model Selection and Justification
+
+```{r}
+website_ts.fit <- website_ts %>%
+  filter(date <= as.Date("2016-12-31")) %>%
+  as_tsibble(index = date) %>%
+  model(
+    ar1a = ARIMA(unique_visits ~ 1 + pdq(1, 1, 0)),
+    ar1b = ARIMA(unique_visits ~ 0 + pdq(1, 1, 0)),
+    ar1c = ARIMA(unique_visits ~ 0 + pdq(1, 2, 0)),
+    arma = ARIMA(unique_visits ~ 0 + pdq(1, 1, 1)),
+    automatic = ARIMA(unique_visits, ic = "aicc", stepwise = FALSE)
+  )
+tidy(website_ts.fit)
+```
+
+Based on forecasting errors: \$y_t - \\hat{y}\_t\$ (residuals)
+
+If the series is well identified and the corresponding model fits well, then the residuals should be white noise: no correlation, no mean
+
+\- If residuals are correlated, then there is information left that should be used in the models
+
+\- If residuals have non-zero mean, then the forecasts will be biased
+
+Hence the diagnosis is based on:
+
+\- ACF and PCF on the residuals: no significant bars
+
+\- .red[Box-Pierce test:] check whether the first autocorrelations are zero (considering all values as a group, not individually)
+
+\- A more accurate test is the .red[Ljung-Box test]
+
+We expect to not see any pattern on the residuals. As there is no pattern, the ACF should show all the lines inside the blue region
+
+A MODEL IS GOOD IF THE RESIDUALS ARE WHITE NOISE.
+
+```{r}
+website_ts.fit |> select(automatic) |> gg_tsresiduals()
+
+```
+
+The final objective is to forecast, so we would not choose the model based on diagnosis, but on the accuracy on the test set for all the models. The best option is the ARMA, and worst AR1, contrary to diagnosis said.
+
+```{r}
+# residuals
+website_ts.fit |> accuracy() 
+website_ts_fc <- website_ts.fit |> forecast(h = 4) # errors in training set
+
+accuracy(website_ts_fc, website_ts)# errors in testing set
+```
+
+As we still are not sure about what model to choose, we forecast with all of them.
+
+\- ar1a is predicting a increasing pattern cause it has a constant.
+
+\- ar1b does not have constant, then the increasing is less visible. But, important to understand that it only works ONLY for this testing set.
+
+\- ar1c works only by luck, only on this specific testing set, but it was initially discarded with reason.
+
+\- arma works similarly that ar1b.
+
+In conclusion, trust on the diagnosis, discard models, and later choose the smallest error (better to use cross validation). Then, we could choose either ar1a or ar1b.
+
+```{r}
+autoplot(website_ts_fc, filter(website_ts, date >= as.Date("2014-01-01"))) +
+  facet_wrap(~.model)
+```
+
+### 4.2 Model selection for the seasonal part
+
+Another part in the model for the seasonal component:
+
+Regular part: ARIMA(p,d,q)
+
+Seasonal part: ARIMA(P,D,Q) \$\_m\$
+
+where \$m =\$ period of the season (24 for hourly data, 12 for monthly data, etc.),
+
+and \$D\$ represents the seasonal differences: \$y_t - y\_{t-m}\$, for \$D=1\$
+
+Build 2 models
+
+This is the main model:
+
+AR(1)
+
+In the autocor func. \--\> very fast decreasing
+
+In the partial autocor \--\> very big bar and the rest are noise
+
+An extra model for the seasonality part
+
+Autocor_function \--\> It is the same but focusing on the lags multiples of the period. Even after having removed the seasonality, there should be the option of seeing something.
+
+If difference(1): Yt-Yt-1 (season is 1). Removing the trend with 1 difference \--\> no trend.
+
+Peaks and valleys are only because of the seasonality here.
+
+If difference(4): Yt-Yt-4 (season is 4 as they are quarters = quarterly data). These are the residuals when taking 1 seasonal difference of a season 4.
+
+For the regular part it is always 0,1 or maximum 2 (d) Only has to do with the trend.
+
+For the seasonality part it is the seasonality (D). D=1 for S=4. (1 difference of order 4). Select the period of the season. If no seasonality D=0.
+
+Most of the time D=1 with S= whatever and D=2 in some applications.
+
+At least 6 or 7 models (combining both regular and seasonal)
+
+Here d=1 to remove the trend and D=4 to remove the season.
+
+Use 7 to predict the short term.
+
+If the data was hourly use 24 or 168 (a week) to forecast tomorrow or 1 week.
+
+```{r}
+website_ts |> autoplot( unique_visits |> difference(4) )
+
+```
+
+Visualization of ACF and PCF to select the hyperparameters.
+
+If there is a negative trend before (so d=1) \--\> then 2 differences
+
+difference(difference(Beer,4),1) \--\> The 4 is because of the season and the 1 because of the trend. d=1 and D=4
+
+From here the model should be guessed.
+
+```{r}
+#example
+beer_fit <- train %>%
+  model(
+    mean = MEAN(Beer), #3 benchmarks are being tried
+    naive = NAIVE(Beer),
+    snaive = SNAIVE(Beer),
+    ets = ETS(Beer),
+    ma1.ma1 = ARIMA(Beer ~ 0 + pdq(0,0,1) + PDQ(0,1,1)),
+    auto = ARIMA(Beer, stepwise = FALSE, approximation = FALSE,) #autoARIMA
+  ) |> mutate(ensemble = (ets + snaive + auto) / 3)
+```
+
+```{r}
+#Train accuracy
+accuracy(website_ts.fit)
+```
+
+For the testing set it is needed to forecast. For 14 periods here. Then compute the error in the testing set.
+
+```{r}
+# Generate forecasts for 14 quarters
+beer_fc <- beer_fit %>% forecast(h = 14)
+beer_fc %>% autoplot(train, level = NULL) +
+  autolayer(filter_index(aus_production, "2007 Q1" ~ .), color="black") +
+  labs(y = "Megalitres",title = "Forecasts for quarterly beer production") +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+
+Test accuracy: MSE in the testing set
+
+In this application, the automatic ARIMA is the best (in this specific testing set). Try in as many testing set as possible.
+
+```{r}
+accuracy(beer_fc, aus_production) |>
+  group_by(.model) |>
+  summarise(
+    RMSE = mean(RMSE),
+    MAE = mean(MAE),
+    MASE = mean(MASE)
+  ) |>
+  arrange(RMSE)
+```
+
+## 5. Prediction Intervals
+
+The computation of forecast intervals is more difficult
+
+Moreover, they depend on specific assumptions on residuals (uncorrelated and normally distributed)
+
+The first-period ahead interval is easy to compute, where \$\\hat{\\sigma}\_a\$ is the s.d. of the residuals, and 1.96 comes from 95%-confidence and normality
+
+But multi-step forecast intervals are more difficult to obtain
+
+In general, the width of the interval increases with the forecasting horizon
+
+\- If \$d=0\$ (stationary series), the intervals for long horizons will be essentially the same
+
+\- If \$d\\geq 1\$, the intervals will continue to grow for long horizons
+
+## 6. Interpretation and conclusions
+
+(accuracy and reliability of your forecasts, potential limitations, and the implications of your findings)
