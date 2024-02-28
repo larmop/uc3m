@@ -405,7 +405,9 @@ if (adf_test_result$p.value < 0.05) {
 
 ```
 
-#### 4.2 ACFs and PACFs to approximate d, p and q values
+#### 4.2 Select ARIMA hyperparameters
+
+In this section we will try to approximate the hyper parameters for the chosen ARIMA model: p, d and q.
 
 First of all, we will create a lag plot, showing the relationship between unique_visits and its lagged values. This will be useful for visually inspecting autocorrelation patterns in the time series data.
 
@@ -419,13 +421,15 @@ In the following code, we will use the autocorrelation function to compute all t
 
 As we are considering weekly seasonality and that seasonality exists, the ACF at the seasonal lag (that will be 7 for that reason) will be large and positive.
 
-**Autocorrelation Function (ACF)**
+##### **4.2.1 Autocorrelation Function (ACF)**
 
 As we pointed out in 3.1.3, we will be forecasting in the short term, so apart from the seasonalities that we already identified, we will consider that there is a rising trend.
 
 In order to interpret the plot, we know that the first bar represents the correlation between a period and the previous one. If the correlation is inside the blue area, it can be said that it is zero.
 
 Depending on the speed positive bars are decreasing, we should use faster or slower models. In this case, as the decreasing is more similar to a line than to a curve, we will use a slow model.
+
+The resulting plot shows the autocorrelation values at different lags, helping to identify patterns and seasonality in the data.
 
 ```{r}
 website_ts |> ACF(unique_visits) |> autoplot()
@@ -435,190 +439,93 @@ When data have a trend, the auto correlations for small lags tend to be large an
 
 As here data is trended and seasonal, we see a combination of these two effects.
 
-```{r}
-website_ts |> ACF(unique_visits - lag(unique_visits), lag_max = 48) |> autoplot()
+The ACF decreases slowly here in the stationary peaks. In practice, apart from applying the stationary test to decide if we take differences, we always do it when if the ACF decays slowly, so it is clear in this case.
 
-website_ts |> ACF(returning_visits - lag(returning_visits), lag_max = 48) |> autoplot()
+**Applying differencing**
 
-```
-
-Short-term correlation is more important when the correlations are high.
-
-See if there are peaks in multiples of X.
-
-If there is a 1 correlation, we cannot forecast as the numerator is 0.
-
-When plotting adjusted - lad(adjusted) we plot cor (Rt, Rt-lag)
-
-#### PACF
-
-PACF measures the linear relationship between the correlations of the residuals, hence removes the dependence of lags on other lags.
+Differencing is a common technique to remove trends or seasonality in time series data. There are two syntax to do it, so we will comment the one that we are not using but that is equivalent. We are plotting the correlation between Rt and Rt - lag.
 
 ```{r}
-website_ts |> PACF(unique_visits, lag_max = 48) |> autoplot()
-website_ts |> PACF(returning_visits, lag_max = 48) |> autoplot()
+#website_ts |> ACF(unique_visits - lag(unique_visits), lag_max = 48) |> autoplot()
 
-```
-
-```{r}
-#website_ts <- website |> mutate(return = difference(unique_visits)/lag(unique_visits))
-
-```
-
-#### Differencing
-
-IF there is a trend, remove it using the difference:
-
-```{r}
-#ACF(website_ts, difference(unique_visits), lag_max = 20) |> autoplot()
 ACF(website_ts, difference(unique_visits)) |> autoplot()
 ```
 
-Now, we can have two options:
+Here, correlations are high, so short-term correlation is even more important. We can see that there are peaks in the multiples of 7, that is the seasonality.
 
-1.  the ACF shows a first big bar, and rest 0 \--\> MA(1)
+The ACF decays slowly, so to better decide which model it is, we will also use the PACF plot.
 
-2.  ACF shows a fast decreasing \--\> AR(1)
+##### **4.2.2 Partial Autocorrelation Function (ACF)**
 
-To better decide, we observe the PACF, that shows a big bar. Then, we take before as a decreasing, so we finally choose a AR(1)\--\>ARIMA(1,1,0).
-
-But we can always try different models such as ARIMA(0,1,1)
+PACF measures the linear relationship between the correlations of the residuals, hence removes the dependence of lags on other lags. This is the PACF of the original time series up to a specified lag.
 
 ```{r}
-#PACF(website_ts, difference(unique_visits), lag_max = 20) |> autoplot()
+website_ts |> PACF(unique_visits, lag_max = 48) |> autoplot()
+```
+
+Now, the following approach examines the partial autocorrelation structure of the differenced time series by taking differences, which will allow us to achieve stationarity and to identify potential auto-regressive (AR) terms in the context of ARIMA modeling.
+
+```{r}
 PACF(website_ts, difference(unique_visits)) |> autoplot()
 ```
 
-After stabilizing the variance, control for trends and seasons:
+The ACF shows a slow decreasing and the PACF shows a big bar and then zeros (apart from some interactions). For this reason, we finally choose an AR(1), that is ARIMA(1,1,0).
 
-\- First difference: \$\\triangle y_t = w\_{t} = y\_{t}-y\_{t-1}\$
+In any case, we will also try different models such as ARIMA(0,1,1).
 
-\- Second difference: \$\\triangle w_t = w\_{t}-w\_{t-1}=y\_{t}-2y\_{t-1}+y\_{t-2}\$
+#### 4.2.3 Decision on whether to take one more difference
 
-\- Seasonal difference: \$\\triangle_m y_t = y_t-y\_{t-m}\$ (\$m=\$ period of season)
-
-Let's observe the time series with difference. In case we have still some trend (in this case it can be seen a little decreasing trend), we must choose d=2. However, is more careful and conservative to choose d=1. Only choose d=2 if the trend is much more clear.
+Let's observe the time series now that we have applied one difference.
 
 ```{r}
 website_ts %>% autoplot(difference(unique_visits))
 ```
 
-If we have doubts regarding differencing, better be conservative: do not differentiate
+In case we still had some trend, we must choose d=2. However, not even in the last data it can be noticed a trend, and it is more careful and conservative to choose d=1. Otherwise, over-differentiating will tend to degrade the quality of forecasts. We would only choose d=2 if the trend was much more clear.
 
-Otherwise, overdifferencing will tend to degrade the quality of forecasts
+#### 4.3 Select seasonal ARIMA hyperparameters
 
-In practice, we take differences if the ACF decays slowly
+In this section we will try to approximate the hyper parameters for the chosen seasonal ARIMA model: P, D and Q.
 
-But how to determine more objectively if differencing is required?
+Once we have taken differences, we have stabilized the variance and we already have control for trends and seasons. One more difference that makes sense to take when there is seasonality is the *Seasonal difference.*
 
-#### **Stationarity Testing**
+Seasonal differentiating involves taking the difference between an observation and the corresponding observation from the previous season:
 
-Augmented Dickey-Fuller (ADF) test:
+*y_t-y\_{t-m} where m=period of season*
 
-\- The null-hypothesis for an ADF test is that the data are non-stationary
+It is a specific type of difference commonly used to address seasonality in time series data.
 
-\- The test is based on \$\\hat{\\rho}\$. If it is enough negative, then reject
-
-\- Differencing is required if the p-value is greater than 0.05
+The 7 is included because of the season D=7 and the 1 because of the trend d=1.
 
 ```{r}
-library(tseries)
-
-# Function to perform Augmented Dickey-Fuller Test
-Augmented_Dickey_Fuller_Test_func <- function(series, column_name) {
-  cat(paste("Dickey-Fuller test results for column:", column_name, "\n"))
-  
-  # Perform ADF test
-  adf_test <- tseries::adf.test(series, alternative = "stationary")
-  
-  # Display the results
-  dfoutput <- c(
-    "Test Statistic" = adf_test$statistic,
-    "p-value" = adf_test$p.value,
-    "No Lags Used" = adf_test$parameter,
-    "Number of observations used" = adf_test$method
-  )
-  
-  cat(dfoutput, "\n")
-  
-  # Display Critical Values
-  cat("Critical Values:\n")
-  for (key in names(adf_test$critical)) {
-    cat(paste("  Critical Value (", key, "): ", adf_test$critical[[key]], "\n"))
-  }
-  
-  # Conclusion
-  cat("Conclusion:====>\n")
-  if (adf_test$p.value <= 0.05) {
-    cat("Reject the null hypothesis\n")
-    cat("The data is stationary\n")
-  } else {
-    cat("The null hypothesis cannot be rejected\n")
-    cat("The data is not stationary\n")
-  }
-}
+ACF(website_ts, difference(difference(unique_visits, 7), 1), lag_max = 20) |> autoplot()
 ```
+
+For the seasonal part, we only look at bars multiple of 7: 7, 14, 21, etc. As we can see a big line and the rest can be considered to be zero , we can say that the model is a MA(1), as there is no decreasing.
 
 ```{r}
-Augmented_Dickey_Fuller_Test_func(website_ts$unique_visits, "unique_visits")
+PACF(website_ts, difference(difference(unique_visits, 7), 1), lag_max = 20) |> autoplot()
 ```
 
-Alternative:
+#### 4.4 Final guess
 
-```{r}
-# Assuming website_ts is a tibble and "unique_visits" is the column of interest
-X <- website_ts$unique_visits
+So the guess is AR(1)xMA(1)\_7.
 
-# Convert X to a numeric vector
-X <- as.numeric(X)
+# FALTA
 
-# Perform Augmented Dickey-Fuller test
-adf_test_result <- adf.test(X, alternative = "stationary")
+-   REVISAR ARIMA DE ABAJO ANTES DE SEGUIR
 
-# Print the results
-print(adf_test_result)
+-   Ver cómo se divide en train y test
 
-# Extracting the values from the results
-cat('ADF Statistic: ', adf_test_result$statistic, '\n')
-cat('p-value: ', adf_test_result$p.value, '\n')
+-   Hacer naive model
 
-# Making a decision based on the test
-if (adf_test_result$p.value < 0.05) {
-  cat("Reject H0 - Time Series is Stationary\n")
-} else {
-  cat("Failed to Reject Ho - Time Series is Non-Stationary\n")
-}
+-   Hacer ETS model
 
+-   Hacer 4 combinaciones de ARIMA basadas en los resultados de uno.
 
-```
+#### 4.5 Splitting into train and test sets
 
-**When there is seasonality:**
-
-Visualization of ACF and PCF to select the hyperparameters.
-
-If there is a negative trend before (so d=1) \--\> then 2 differences
-
-difference(difference(Beer,4),1) \--\> The 4 is because of the season and the 1 because of the trend. d=1 and D=4
-
-From here the model should be guessed.
-
-As it is a big line and the rest are 0 \--\> MA(1). The third bar is because of an interaction.
-
-For the seasonal part, only look at bars multiple of 4: 4, 8, 12... They are practically 0 except of the rest, so it is an MA(1), AS THERE IS NO DECREASING.
-
-So the guess is MA(1)xMA(1)\_4
-
-```{r}
-train <- aus_production %>% filter_index("1992 Q1" ~ "2006 Q4")
-
-ACF(train, difference(Beer, 4), lag_max = 20) |> autoplot()
-```
-
-```{r}
-PACF(train, difference(Beer, 4), lag_max = 20) |> autoplot()
-```
-
-#### Train/Test: Try with different training and test sets
+**Try with different training and test sets**
 
 As we are not sure about the model to choose, we would evaluate with train/test evaluation. To do it, we split into training and test, but importart to do it in order, as we are with time series. Train with data up to 2013 (to test later from 2014).
 
@@ -787,8 +694,6 @@ Take d=1 from the beginning and if the residuals are more or less constant then 
 
 If a difference is taken when it is not needed \--\> overfitting. To test this, the null hypothesis is that we don't need to take differences (d=0). There is a function Dickey-Fuller, in R ADF.If the p value is small enough, reject the H0 and take the difference.
 
-For months: 12, for weeks: 52.
-
 There are two seasonalities, so we choose the one that is more important (7 years of daily data, periods of 7 days and 365 days). It is chosen using period=a number.
 
 To deal with the second most important one, deal with it as another trend.
@@ -831,11 +736,7 @@ AR(1): A decreasing in the auto correlation and no decreasing at all, only one l
 
 ARMA(1,1): We expect to see decreasing on both AC and partial AC. It is very difficult to distinguish between ARMA(1,1), ARMA(2,1) and ARMA(1,2). Try the 3 and evaluate with crossvalidation. Other way to evaluate is to use the p values of the parameters.
 
-##### 2. Choosing p and q: AR(p), MA(q)
-
-To determine the value of p and q, we need autocorreation and partial autocorelation functions
-
-##### 3. Meaning of the values
+##### 2. Meaning of the values
 
 \- If \$c=0\$ and \$d=0\$, the long-term forecasts will go to zero
 
