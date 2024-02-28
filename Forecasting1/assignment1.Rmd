@@ -226,7 +226,7 @@ print(plot_website)
 
 After this visual analysis and in order to be more accurate in finding not only trends ans seasonalities, but also possible cycles and residuals, we will use both Time-Series Decomposition and Seasonal adjustment.
 
-#### 3.1.1 Time-Series decomposition and seasonal adjustment
+#### 3.1.1 Time-Series decomposition
 
 Here we will be using the Additive Decomposition: y_t = T_t + S_t + R_t, where:
 
@@ -253,6 +253,31 @@ Given the nature of the data, we can guess that, as the data are from accesses t
 
 -   Yearly seasonality may be related to the length of the academic year/calendar. During holidays, fewer notes are likely to be consulted.
 
+**Clearer representation of the seasonalities**
+
+Below, we can see the seasonalities more clearly by applying multiple seasonal periods.
+
+The weekly seasonality is as it follows. As we can see, Fridays, Saturdays and Sundays receive less visits.
+
+```{r}
+library(feasts)
+website_ts |> gg_season(unique_visits, period = "week")
+```
+
+This is the monthly seasonality, that, as we have concluded before, cannot be found. There are no patterns between weeks.
+
+```{r}
+website_ts |> gg_season(unique_visits, period = "month", labels = "right") + labs(title = "Monthly seasonality of Unique Visits")
+website_ts |> gg_season(returning_visits, period = "month")
+```
+
+Finaly, this is the yearly seasonality. As we have sensed before, the months in which the page receive less visits are during academic holidays: Christmas, summer, etc.
+
+```{r}
+website_ts |> gg_season(unique_visits, period = "year")
+website_ts |> gg_season(returning_visits, period = "year")
+```
+
 It would be interesting to indicate that the seasonal component in the STL method should be modeled in a way that takes into account the inherent periodicity in the time series, with the seasonalities we have found with the academic year and the days of the week. This option could help to capture and model both seasonalities more effectively, as we believe that both the weekly and the yearly seasonal patterns are consistent and do not change significantly over the observed time period. To capture this stability, we specify the option *periodic*:
 
 ```{r}
@@ -265,13 +290,16 @@ However, once we have tried this option, we observe something similar to a trend
 
 After adjusting for seasonality, we can identify better the trends or cycles.
 
-We apply seasonal adjustment here, to show how the series looks after adjusting and removing seasonality.
+We apply seasonal adjustment here, to show how the series looks after adjusting and removing seasonality. The trend plus the residuals is what can be seen as the result.
 
 ```{r}
-
+website_ts |>
+  autoplot(unique_visits, color = "gray") +
+  autolayer(components(dcmp), season_adjust, color = "#0072B2") +
+  labs(y = "Unique visits", title = "Total visits - Seasonal adjusted")
 ```
 
-3.  **Cycles:** In the previous plots we have seen that there is not a clear trend, but a cycle, as it magnitude is variable and the timing of peaks and troughs is unpredictable in the long term and not of a fixed period.
+3.  **Cycles:** In the STL plots we have seen that there is not a clear trend, but a cycle, as it magnitude is variable and the timing of peaks and troughs is unpredictable in the long term and not of a fixed period.
 
     The trend/cycle is highlighted here, providing a more focused visualization of the overall direction of the time series, excluding seasonal variations.
 
@@ -286,15 +314,32 @@ We apply seasonal adjustment here, to show how the series looks after adjusting 
 
 5.  **Volatility**: We see changing volatility, where the size of the residuals (and thus the noise) varies at different times, suggesting periods of increased or decreased uncertainty in the series. Residuals can be forecast but noise cannot.
 
-**Will we forecast well?**
+#### 3.1.2 Strength of the relationship between variables
+
+The two targets are highly correlated.
+
+```{r}
+website %>%
+  ggplot(aes(x = unique_visits, y = returning_visits)) +
+  geom_point() +
+  labs(title = "Scatter Plot for Targets",
+       x = "Unique Values", y = "Returning Values") +
+  theme_minimal()
+```
+
+#### **3.1.3 Will we forecast well? First insights**
 
 The STL decomposition separates quite clearly the trend and seasonal components, leaving residuals that do not completely appear as white noise, but do not show any pattern or outlier.
 
 This is a good indication that the model has captured the main systematic parts of the series. It suggests that future forecasts might be relatively accurate, as the model can leverage these well-defined components.
 
-Now, we have to decide whether we will forecast based on the day-of-week or the time-of-year effects. We will develop a 1-day-ahead forecasting model and a 7-day ahead forecasting model.
+Now, we have to decide whether we will forecast based on the day-of-week or the time-of-year effects on this daily data. We will predict in the short term by developing a 1-day-ahead forecasting horizon model and a 7-day ahead one. Because of that, we will be calculating the correlation btetween Yt and Yt-1, an autocorrelation of order 1. This order (the amount of info from the past needed to predict) will be a hyper parameter of the model.
 
-### 3.2 For returning visits:
+In the short term the trend is already linearly increasing, so we will not perform any transformation to the data.
+
+For the rest of the assignment, MSE will be used as the performance metric when evaluating the forecast made on the test sets. Machine Learning models will be used to forecast.
+
+### 3.2 For returning visits
 
 ```{r}
 plot_website2 <- website %>%
@@ -313,137 +358,19 @@ print(plot_website2)
 After adjusting for seasonality, we can identify better the trends or cycles.
 
 ```{r}
-# Assuming 'website' is your dataset
-website %>%
-  ggplot(aes(x = date)) +
-  geom_line(aes(y = unique_visits), color = "blue") +
-  geom_line(aes(y = returning_visits), color = "red") +
-  labs(title = "Time Series Plot for Targets",
-       x = "Time", y = "Target Values") +
-  theme_minimal()
-
+website_ts %>% gg_season(returning_visits, labels = "right") + labs(title = "Seasonality of Returning Visits")
 ```
 
-```{r}
-# Assuming 'website' is your dataset
-website %>%
-  ggplot(aes(x = unique_visits, y = returning_visits)) +
-  geom_point() +
-  labs(title = "Scatter Plot for Targets",
-       x = "Unique Values", y = "Returning Values") +
-  theme_minimal()
+## 4. Statistical Analysis
 
-```
+In this section, we will complete 3 main phases:
 
-Graph the data and try to answer:
-
-\- Are there consistent patterns?
-
-\- Is there a significant trend?
-
-\- Is seasonality important?
-
-\- Is there evidence of the presence of cycles?
-
-\- Are there significant changes in volatility?
-
-\- Are there any outliers in the data?
-
-\- How strong are the relationships among the variables?
-
-First insights:
-
-\- Frequency (hourly, daily, monthly, etc.)
-
-\- Forecasting horizon (one-day ahead, 7-days ahead, etc.)
-
-\- Features (from the own target, and other variables)
-
-\- Performance measures (mse, mape, based on costs, etc.)
-
-\- Prediction intervals
-
-\- Models (traditional, ML, etc.)
-
-```{r}
-library(tsibble)
-
-website <- website |> mutate(unique_visits = as.numeric(gsub(",", "", unique_visits))) # Convertir a numérico
-website_ts <- website |> as_tsibble(index = date) # Convertir a tsibble
-
-website_ts |> autoplot(unique_visits)
-```
-
-```{r}
-website <- website |> mutate(returning_visits = as.numeric(gsub(",", "", returning_visits))) # Convertir a numérico
-website_ts <- website |> as_tsibble(index = date) # Convertir a tsibble
-
-website_ts |> autoplot(returning_visits)
-
-```
-
-Para seasonalities:
-
-```{r}
-library(feasts)
-
-#Convertir a tsibble
-website_ts <- website %>% as_tsibble(index = date)
-
-# Para visualizar estacionalidad en 'unique_visits'
-website_ts %>% gg_season(unique_visits, labels = "right") + labs(title = "Estacionalidad de Visitas Únicas")
-
-# O para 'returning_visits'
-website_ts %>% gg_season(returning_visits, labels = "right") + labs(title = "Estacionalidad de Visitas Recurrentes")
-```
-
-Multiple seasonal periods:
-
-Day of the week:
-
-```{r}
-website_ts |> gg_season(unique_visits, period = "week")
-website_ts |> gg_season(returning_visits, period = "week")
-
-```
-
-Monthly:
-
-```{r}
-website_ts |> gg_season(unique_visits, period = "month")
-website_ts |> gg_season(returning_visits, period = "month")
-```
-
-Academic calendar:
-
-```{r}
-website_ts |> gg_season(unique_visits, period = "year")
-website_ts |> gg_season(returning_visits, period = "year")
-```
-
-Decide if we will predict for next day, month, etc: If we predict what will happen tomorrow respect to today cor (Yt, Yt-1)\--\> autocorrelation of order 1
-
-cor (Yt, Yt-2) \--\> order 2
-
-This order (the amount of info from the past needed to predict) is a hyperparameter of the model.
-
-Y \| X
-
-Y2 \| Y1
-
-Y3 \| Y2
-
-...
-
-YT \| YT+1
-
-If the trend is already linearly increasing, don't perform any transformation to the data.
-
-I want to predict in the short term so try to find a trend in the short term --\> 1 day ahead or 7 days ahead
-
-## 4. Statistical Analysis (tests, ACF, PACF, performance, etc.). Looking for the best model.
-
-### Autocorrelations and lags --\> Also take dfferences here to decide ARIMAs
+1.  **Perform stationary testing:** In order to see whether we need to take differences or not.
+2.  **Plot ACF and PACF testing several differences:** In order to see which models might perform better with our data.
+3.  **Split in different training and test sets**
+4.  **Fit the chosen models with the training data**
+5.  **Predict with the testing data and evaluate performance**
+6.  **Forecast and calculate accuracy**
 
 #### ACF
 
@@ -516,23 +443,6 @@ website_ts |> PACF(returning_visits, lag_max = 48) |> autoplot()
 ```{r}
 website_ts <- website |> mutate(return = difference(unique_visits)/lag(unique_visits))
 
-```
-
-#### Seasonal adjustment:
-
-Useful by-product of decomposition: an easy way to calculate seasonally adjusted data. See whether the number of unique visits is changing removing the season.
-
-Additive decomposition: seasonally adjusted data given by (removing the seasonality) --\> y_t - S_t = T_t + R_t
-
-Multiplicative decomposition: seasonally adjusted data given by: y_t / S_t = T_t \\times R_t
-
-Shows how the series looks after adjusting and removing seasonality. Seasonal components have been removed:
-
-```{r}
-website_ts |>
-  autoplot(unique_visits, color = "gray") +
-  autolayer(components(dcmp), season_adjust, color = "#0072B2") +
-  labs(y = "Unique visits", title = "Total visits")
 ```
 
 #### Differencing
@@ -827,11 +737,7 @@ fit |>  forecast() |>  autoplot(holidays) +
   labs(x = "Year", y = "Overnight trips (thousands)")
 ```
 
-#### Model 2: STL
-
-STL (Seasonal Decomposition of Time Series):] extracts trend, seasonal, with locally smoothed moving average
-
-#### Model 3: ARIMA
+#### Model 2: ARIMA
 
 ARIMA (auto-regressive and moving average: based on a description of the auto correlations. ARIMA models assume past and future are related in a linear way
 
